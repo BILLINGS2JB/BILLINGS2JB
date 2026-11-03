@@ -227,31 +227,59 @@ function renderDashboard(){
   let offset=0;
   const arcs=parts.map(part=>{const len=s.total?part.count/s.total*circ:0;const arc=len>0?`<circle cx="60" cy="60" r="${radius}" fill="none" stroke="${part.color}" stroke-width="14" stroke-dasharray="${Math.max(0,len-.5)} ${circ}" stroke-dashoffset="${-offset}" transform="rotate(-90 60 60)"/>`:'';offset+=len;return arc}).join('');
   const rankingUnits=isAdmin()?state.up3.map(u=>({code:u.code,name:u.name,rows:rows.filter(r=>up3For(r.ulp_code)===u.code)})):isUP3()?state.units.filter(u=>u.up3_code===state.profile.up3_code).map(u=>({code:u.code,name:u.name,rows:rows.filter(r=>r.ulp_code===u.code)})):[{code:state.profile.ulp_code,name:unitLabel(state.profile.ulp_code),rows}];
-  const ranking=rankingUnits.map(u=>({...u,stats:groupStats(u.rows)})).filter(u=>u.stats.total>0).sort((a,b)=>b.stats.pct-a.stats.pct);
+  const ranking=rankingUnits.map(u=>({...u,stats:groupStats(u.rows)})).sort((a,b)=>b.stats.pct-a.stats.pct||String(a.name).localeCompare(String(b.name)));
   const lowest=state.units.filter(u=>isAdmin()||isUP3()&&u.up3_code===state.profile.up3_code||!isAdmin()&&!isUP3()&&u.code===state.profile.ulp_code).map(u=>({...u,stats:groupStats(rows.filter(r=>r.ulp_code===u.code))})).filter(u=>u.stats.total>0).sort((a,b)=>a.stats.pct-b.stats.pct||a.code.localeCompare(b.code)).slice(0,5);
   const tooltip=lowest.length?lowest.map((u,n)=>`<div class="low-row"><span>${n+1}. ${esc(u.name||u.code)}</span><b>${u.stats.pct}%</b></div>`).join(''):'<div class="low-row">Belum ada target ULP</div>';
   return `<article class="job-overview">
    <div class="job-overview-head"><div><div class="num">PEKERJAAN ${String(i+1).padStart(2,'0')}</div><h4>${esc(job.title)}</h4></div><span class="job-target">Target <b>${fmt(s.total)}</b></span></div>
    <div class="job-visuals"><div class="job-donut-section"><div class="donut-and-status"><div class="donut-chart"><svg viewBox="0 0 120 120" role="img" aria-label="Capaian ${s.pct}%"><circle cx="60" cy="60" r="43" fill="none" stroke="#435469" stroke-width="14"/>${arcs}<text x="60" y="57" text-anchor="middle" fill="#F1F5F9" font-size="23" font-weight="750">${s.pct}%</text><text x="60" y="72" text-anchor="middle" fill="#A9BACB" font-size="9">CAPAIAN</text></svg></div>
    <div class="donut-legend">${parts.map(part=>`<div class="legend-item ${part.key==='unstarted'?'legend-hover':''}" ${part.key==='unstarted'?'tabindex="0" aria-label="Lihat ULP dengan realisasi terendah"':''}><span class="legend-dot" style="background:${part.color}"></span><span class="legend-label">${part.name}</span><strong>${fmt(part.count)}</strong>${part.key==='unstarted'?`<div class="low-tooltip"><div class="low-tooltip-title">ULP Realisasi Terendah</div><small>Khusus ${esc(job.title)}</small>${tooltip}</div>`:''}</div>`).join('')}</div></div></div>
-   <div class="job-ranking"><div class="ranking-title">${isAdmin()?'Ranking UP3':'Ranking ULP'} <small>Berdasarkan capaian</small></div><div class="ranking-bars">${ranking.length?ranking.map(u=>`<div class="rank-row"><div class="rank-line"><span title="${esc(u.name)}">${esc(u.name||u.code)}</span><b>${u.stats.pct}%</b></div><div class="rank-track"><i style="width:${Math.min(100,u.stats.pct)}%"></i></div></div>`).join(''):'<div class="ranking-empty">Belum ada target pada periode ini.</div>'}</div></div></div>
+   <div class="job-ranking"><div class="ranking-title">${isAdmin()?'Ranking UP3':'Ranking ULP'} <small>Berdasarkan capaian</small></div><div class="ranking-bars">${ranking.length?ranking.map(u=>`<button type="button" class="rank-row rank-click" data-rank-unit="${esc(u.code)}" data-rank-job="${esc(job.id)}" title="Klik untuk rincian ${esc(u.name||u.code)}"><div class="rank-line"><span title="${esc(u.name)}">${esc(u.name||u.code)}</span><b style="color:${rankColor(u.stats.pct)}">${u.stats.pct}%</b></div><div class="rank-track"><i style="width:${Math.min(100,u.stats.pct)}%;background:${rankColor(u.stats.pct)}"></i></div></button>`).join(''):'<div class="ranking-empty">Belum ada target pada periode ini.</div>'}</div></div></div>
   </article>`;
  }).join(''):'<div class="empty">Belum ada pekerjaan aktif pada sistem.</div>';
  h(`<div class="section-head"><div><h3>Ringkasan Realisasi per Pekerjaan</h3><div class="panel-sub">${esc(entityLabel)} · ${period()} · Hanya hasil disetujui Admin dihitung sebagai realisasi.</div></div><button class="btn" id="refreshDashboard">↻ Refresh</button></div>
  ${isAdmin()?`<button type="button" class="panel verification-banner" id="goVerifyDashboard" title="Buka Verifikasi Pekerjaan"><div><b>Menunggu Verifikasi · Semua Pekerjaan</b><small>Klik untuk memeriksa laporan dari ULP</small></div><strong>${fmt(allStats.pending)} ↗</strong></button>`:''}
  <div class="overview-list">${jobCards}</div>
- <section class="panel"><div class="section-head"><div><h3>${isAdmin()?'Realisasi per UP3 & Pekerjaan':isUP3()?'Realisasi per ULP & Pekerjaan':'Realisasi Pekerjaan ULP'}</h3><div class="panel-sub">Klik angka untuk melihat rincian.</div></div></div>${dashboardMatrix()}<div id="drillDown"></div></section>`);
+ <section class="panel drill-panel" id="drillPanel" hidden><div id="drillDown"></div></section>`);
  $('refreshDashboard').onclick=refresh;
  if(isAdmin()&&$('goVerifyDashboard'))$('goVerifyDashboard').onclick=()=>showPage('verify');
- document.querySelectorAll('[data-matrix]').forEach(e=>e.onclick=()=>renderDrill(e.dataset.matrix,e.dataset.job));
+ document.querySelectorAll('[data-rank-unit]').forEach(e=>e.onclick=()=>renderDrill(e.dataset.rankUnit,e.dataset.rankJob));
+}
+function rankColor(v){return v>=100?'#24845F':v>=80?'#86DCA9':v>=60?'#F5D98C':'#EF7777'}
+function exportUnfinished(jobid,ulp){
+ try{
+  const job=jobBy(jobid);if(!job)throw new Error('Pekerjaan tidak ditemukan');
+  const rs=state.rows.filter(r=>r.job_id===jobid&&r.ulp_code===ulp&&r.status!=='APPROVED'&&r.status!=='PENDING');
+  if(!rs.length)return toast('Tidak ada pekerjaan belum selesai/revisi untuk ULP ini.',true);
+  const cols1=columns(job,'target_columns'),cols2=columns(job,'report_columns');
+  const out=rs.map((r,i)=>{
+   const base={NO:i+1,UP3:up3For(ulp),ULP:ulp,NAMA_ULP:state.units.find(u=>u.code===ulp)?.name||'',BULAN:state.periodMonth,TAHUN:state.periodYear};
+   for(const c of cols1)base[c in base?'TARGET_'+c:c]=r.target_data?.[c]??'';
+   for(const c of cols2)base[c in base?'REALISASI_'+c:c]=r.report_data?.[c]??'';
+   base.STATUS=STATUS[r.status]||r.status;base.ALASAN_PENOLAKAN=r.rejection_note||'';
+   return base;
+  });
+  exportWorkbook(`BELUM_SELESAI_${safeFile(job.title)}_${safeFile(ulp)}_${state.periodYear}_${String(state.periodMonth).padStart(2,'0')}.xlsx`,out,'Belum Selesai');
+  toast(`Excel ${ulp}: ${out.length} pekerjaan belum selesai/revisi berhasil diunduh.`);
+ }catch(e){err(e)}
 }
 function renderDrill(unit,jobid){
- let rows=state.rows.filter(r=>r.job_id===jobid&&(isAdmin()?up3For(r.ulp_code)===unit:r.ulp_code===unit));
- let grouped=isAdmin()?[...new Set(rows.map(r=>r.ulp_code))].sort().map(code=>({code,rows:rows.filter(r=>r.ulp_code===code)})):[{code:unit,rows}];
- const j=jobBy(jobid);let html=`<hr><div class="flex-between"><div><h3>${esc(j?.title||'Pekerjaan')}</h3><div class="panel-sub">${esc(isAdmin()?up3Label(unit):unitLabel(unit))}</div></div><button class="btn" id="closeDrill">✕ Tutup</button></div><div class="table-scroll" style="margin-top:15px"><table class="data-table"><thead><tr><th>ULP</th><th>Target</th><th>Realisasi diterima</th><th>Menunggu</th><th>Belum selesai / revisi</th><th>Capaian</th></tr></thead><tbody>`;
- if(!grouped.length)html+='<tr><td colspan="6">Belum ada data target.</td></tr>';
- for(const group of grouped){const s=groupStats(group.rows);html+=`<tr><td>${esc(unitLabel(group.code))}</td><td>${s.total}</td><td>${s.approved}</td><td>${s.pending}</td><td>${s.remain}</td><td><b>${s.pct}%</b></td></tr>`;}
- html+='</tbody></table></div>';$('drillDown').innerHTML=html;$('closeDrill').onclick=()=>$('drillDown').innerHTML='';
+ const job=jobBy(jobid);if(!job)return;
+ const rows=state.rows.filter(r=>r.job_id===jobid&&(isAdmin()?up3For(r.ulp_code)===unit:r.ulp_code===unit));
+ const grouped=isAdmin()?state.units.filter(u=>u.up3_code===unit).map(u=>({code:u.code,rows:rows.filter(r=>r.ulp_code===u.code)})):[{code:unit,rows}];
+ let html=`<div class="flex-between"><div><h3>${esc(job.title)}</h3><div class="panel-sub">${esc(isAdmin()?up3Label(unit):unitLabel(unit))} · ${period()}</div></div><button class="btn" id="closeDrill">✕ Tutup</button></div><div class="table-scroll" style="margin-top:15px"><table class="data-table"><thead><tr><th>ULP</th><th>Target</th><th>Realisasi diterima</th><th>Menunggu</th><th>Belum selesai / revisi</th><th>Capaian</th></tr></thead><tbody>`;
+ if(!grouped.length)html+='<tr><td colspan="6">Belum ada ULP pada UP3 ini.</td></tr>';
+ for(const group of grouped){
+  const st=groupStats(group.rows);
+  const unfinished=group.rows.filter(r=>r.status!=='APPROVED'&&r.status!=='PENDING').length;
+  html+=`<tr><td>${esc(unitLabel(group.code))}</td><td>${st.total}</td><td>${st.approved}</td><td>${st.pending}</td><td><button type="button" class="unfinished-link" data-export-ulp="${esc(group.code)}" data-export-job="${esc(jobid)}" ${!unfinished?'disabled':''} title="Download Excel belum selesai/revisi ${esc(group.code)}">${unfinished} ${unfinished?'↓':''}</button></td><td><b style="color:${rankColor(st.pct)}">${st.pct}%</b></td></tr>`;
+ }
+ html+='</tbody></table></div>';
+ const panel=$('drillPanel');if(!panel)return;
+ panel.hidden=false;$('drillDown').innerHTML=html;
+ $('closeDrill').onclick=()=>{panel.hidden=true;$('drillDown').innerHTML=''};
+ document.querySelectorAll('[data-export-ulp]').forEach(btn=>btn.onclick=()=>exportUnfinished(btn.dataset.exportJob,btn.dataset.exportUlp));
+ panel.scrollIntoView({behavior:'smooth',block:'start'});
 }
 function renderPekerjaan(){
  const jobs=currentJobs();
