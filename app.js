@@ -337,38 +337,60 @@ async function previewImport(){
 }
 async function uploadImport(){
  const btn=$('uploadRun');
- let successful=0;
- let total=0;
+ let total=0,successful=0,failed=[];
  try{
-  // Always parse the current file on click; preview is NEVER a prerequisite.
   importFeedback('Memeriksa file Excel sebelum upload...');
   const {job,incoming}=await parseSelectedTarget();
   total=incoming.length;
   state.importRows=incoming;state.importJob=job.id;
   const jobId=job.id,year=state.periodYear,month=state.periodMonth;
-  if(!confirm(`Upload ${incoming.length} baris target (${[...new Set(incoming.map(r=>r.ulp))].join(', ')}) untuk ${period()}?`)){
+  if(!confirm(`Upload ${total} baris target untuk ${period()}? Data yang sudah pernah diupload akan diperbarui tanpa menghapus laporan ULP.`)){
    importFeedback('Upload dibatalkan. File tetap siap di-upload.');return;
   }
   busy(btn,true);
-  for(const r of incoming){
-   const {error}=await sb.rpc('billing_import_target',{p_job:jobId,p_year:year,p_month:month,p_ulp:r.ulp,p_key:r.key,p_data:r.data});
-   if(error)throw new Error(`Baris ${successful+1} / UNITUP ${r.ulp}: ${error.message}`);
-   successful++;
+  const chunkSize=100;
+  for(let start=0;start<total;start+=chunkSize){
+   const slice=incoming.slice(start,start+chunkSize);
+   importFeedback(`Mengunggah baris ${start+1}–${Math.min(start+slice.length,total)} dari ${total}. Berhasil: ${successful}, gagal: ${failed.length}. Jangan tutup halaman.`);
+   const payload=slice.map(r=>({job_id:jobId,period_year:year,period_month:month,ulp_code:r.ulp,source_key:r.key,target_data:r.data}));
+   let batchResult=null,networkError=null;
+   // Retries for transient connection problems. Safe because upsert is idempotent.
+   for(let attempt=1;attempt<=3;attempt++){
+    try{
+     const response=await sb.rpc('billing_import_target_batch',{p_rows:payload});
+     if(response.error)throw response.error;
+     batchResult=response.data;
+     if(!batchResult||typeof batchResult.success!=='number'||!Array.isArray(batchResult.errors))throw new Error('Respons batch tidak dikenali.');
+     networkError=null;break;
+    }catch(e){networkError=e;if(attempt<3)await new Promise(resolve=>setTimeout(resolve,400*attempt));}
+   }
+   if(networkError){
+    // This entire batch might have succeeded before the response was lost.
+    // The next upload can safely be retried because the server uses UPSERT.
+    failed.push({line:start+2,ulp:slice[0]?.ulp,key:slice[0]?.key,message:`Batch ${start+1}–${start+slice.length}: ${networkError.message}`});
+    continue;
+   }
+   successful+=batchResult.success;
+   for(const e of batchResult.errors){
+    const r=slice[(e.index||1)-1];
+    failed.push({line:start+(e.index||1)+1,ulp:e.ulp_code||r?.ulp,key:e.source_key||r?.key,message:e.message||'Tidak diketahui'});
+   }
   }
-  // Verify all submitted identities, not just the number returned by RPC.
-  const check=await listAll('billing_targets',q=>q.eq('job_id',jobId).eq('period_year',year).eq('period_month',month),'id,ulp_code,source_key');
-  const seen=new Set(check.map(r=>String(r.ulp_code)+'|'+String(r.source_key)));
+  // Re-check database: batched reads, not a default 1000-row SELECT.
+  const stored=await listAll('billing_targets',q=>q.eq('job_id',jobId).eq('period_year',year).eq('period_month',month),'ulp_code,source_key');
+  const seen=new Set(stored.map(r=>String(r.ulp_code)+'|'+String(r.source_key)));
   const missing=incoming.filter(r=>!seen.has(r.ulp+'|'+r.key));
-  if(missing.length)throw new Error(`Upload berjalan tetapi ${missing.length} baris tidak terbaca kembali. UNITUP ${missing[0].ulp}, ID ${missing[0].key}. Periksa RLS/SQL sebelum mencoba ulang.`);
+  const failedLines=failed.slice(0,12).map(x=>`Baris ${x.line} (UNITUP ${x.ulp}, ID ${x.key}): ${x.message}`);
+  let summary=`Selesai proses ${total} baris. ${total-missing.length} terbaca di Supabase; ${missing.length} belum ditemukan.`;
+  if(failed.length)summary+=`\n${failed.length} laporan kegagalan batch/baris. Contoh:\n${failedLines.join('\n')}`;
+  if(missing.length)summary+=`\nBaris pertama belum tersimpan: UNITUP ${missing[0].ulp}, ID ${missing[0].key}. Anda boleh upload ulang file yang sama, tanpa menghapus realisasi sebelumnya.`;
+  importFeedback(summary,missing.length>0||failed.length>0);
   await Promise.all([loadMaster(),fetchRows()]);
-  importFeedback(`✓ BERHASIL: ${successful} baris target tersimpan untuk ${job.title} (${period()}).`);
-  showPage('detail',{job:jobId});
-  toast(`${successful} baris target berhasil di-upload dan ditampilkan.`);
+  if(missing.length===0){toast(`Semua ${total} baris target sudah terbaca di Supabase.`);}
+  else toast(`Upload sebagian: ${total-missing.length}/${total} baris terverifikasi. Buka rincian di bawah tombol Upload.`,true);
  }catch(e){
-  const message=(successful?`${successful} dari ${total} baris diproses. `:'')+e.message;
-  importFeedback(message,true);
-  toast('UPLOAD GAGAL: '+message,true);
-  console.error('Upload target:',e);
+  importFeedback(`Proses upload berhenti: ${e.message}. ${successful} baris sempat dilaporkan berhasil. Jangan hapus data lama.`,true);
+  toast('UPLOAD: '+e.message,true);console.error('Upload target:',e);
  }finally{busy(btn,false)}
 }
 
