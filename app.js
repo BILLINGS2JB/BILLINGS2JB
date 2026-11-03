@@ -42,15 +42,29 @@ async function loadMaster(){
 }
 async function fetchRows(){state.rows=await listAll('billing_targets',q=>periodFilter(q));}
 async function loadContext(){
- const {data:{user},error}=await sb.auth.getUser();if(error)throw error;
+ const {data:{user},error}=await sb.auth.getUser();
+ if(error)throw new Error('Supabase Auth: '+error.message);
  if(!user)throw new Error('Sesi login tidak ditemukan');
- const r=await sb.from('billing_profiles').select('*').eq('user_id',user.id).single();
- if(r.error||!r.data)throw new Error('Akun belum terdaftar pada tabel billing_profiles. Hubungkan akun di SQL Editor.');
+ const r=await sb.from('billing_profiles').select('*').eq('user_id',user.id).maybeSingle();
+ if(r.error)throw new Error('Gagal membaca profil: '+r.error.message);
+ if(!r.data)throw new Error('Email berhasil login, tetapi profil belum ditemukan di billing_profiles: '+user.email);
  if(!r.data.is_active)throw new Error('Akun tidak aktif');
- state.profile=r.data;await Promise.all([loadMaster(),fetchRows()]);
+ state.profile=r.data;
+ // Login tidak boleh tergantung dari suksesnya loading tabel pekerjaan atau target.
  $('login').classList.add('hidden');$('app').classList.remove('hidden');
- $('sideUsername').textContent=r.data.username;$('sideRole').textContent={ADMIN:'Admin / GOD',UP3:'Monitoring UP3',ULP:'Pelaporan ULP'}[r.data.role];
- $('sideInitial').textContent=(r.data.username||'U')[0].toUpperCase();renderNav();showPage('dashboard');
+ $('sideUsername').textContent=r.data.username;
+ $('sideRole').textContent={ADMIN:'Admin / GOD',UP3:'Monitoring UP3',ULP:'Pelaporan ULP'}[r.data.role]||r.data.role;
+ $('sideInitial').textContent=(r.data.username||'U')[0].toUpperCase();renderNav();
+ try {
+  await Promise.all([loadMaster(),fetchRows()]);
+  showPage('dashboard');
+ } catch(e) {
+  console.error('Data pekerjaan gagal dimuat (login tetap berhasil):',e);
+  state.jobs ||= [];state.rows ||= [];state.units ||= [];state.up3 ||= [];
+  $('pageTitle').textContent='Dashboard';$('pageSubtitle').textContent='Perlu perbaikan koneksi data';
+  h(`<section class="panel"><h3>Login berhasil</h3><p>Akun <b>${esc(r.data.username)}</b> berhasil masuk, tetapi data pekerjaan belum dapat dibaca.</p><p style="color:#b91c1c">${esc(e.message)}</p><button class="btn" id="retryLoad">Coba Muat Ulang</button></section>`);
+  $('retryLoad').onclick=async()=>{try{await Promise.all([loadMaster(),fetchRows()]);showPage('dashboard')}catch(x){alert('Gagal memuat data: '+x.message)}};
+ }
 }
 function renderNav(){
  const nav=[['dashboard','▦','Dashboard'],['pekerjaan','▤','Pekerjaan']];
@@ -381,7 +395,13 @@ function exportJob(job){try{
  }catch(e){err(e)}
 }
 async function refresh(rebuild=true){try{await Promise.all([loadMaster(),fetchRows()]);if(rebuild)showPage(state.page);else showPage(state.page,{job:state.job});}catch(e){err(e)}}
+function loginError(message){
+ let target=$('billingLoginError');
+ if(!target){target=document.createElement('div');target.id='billingLoginError';target.setAttribute('role','alert');target.style.cssText='margin-top:14px;padding:12px;border:1px solid #fca5a5;border-radius:10px;background:#fef2f2;color:#991b1b;font-size:13px;white-space:pre-wrap';$('loginForm').appendChild(target)}
+ target.textContent=message;
+}
 async function login(ev){
+ const old=$('billingLoginError');if(old)old.remove();
  ev.preventDefault();
  const btn=$('loginButton');busy(btn,true);
  const username=$('loginUser').value.trim();
@@ -394,10 +414,10 @@ async function login(ev){
    toast('Berhasil masuk ke BILLINGS2JB.');
   }catch(contextError){
    console.error('Autentikasi berhasil, tetapi gagal membuka aplikasi:',contextError);
-   toast('Login Auth BERHASIL, tetapi gagal memuat data: '+contextError.message,true);
+   loginError('Auth berhasil, tetapi profil gagal dimuat: '+contextError.message);
    // Jangan signOut: masalahnya ada pada data/RLS, bukan password.
   }
- }catch(e){console.error('Login BILLINGS2JB:',e);err(e)}
+ }catch(e){console.error('Login BILLINGS2JB:',e);loginError(e.message||String(e))}
  finally{busy(btn,false)}
 }
 async function logout(){if(!confirm('Keluar dari BILLINGS2JB?'))return;await sb.auth.signOut();state.profile=null;state.draft={};$('app').classList.add('hidden');$('login').classList.remove('hidden');$('loginPass').value='';}
@@ -405,7 +425,7 @@ function setupPeriod(){const m=$('month'),y=$('year');m.innerHTML=MONTHS.map((n,
  const change=async()=>{state.periodMonth=Number(m.value);state.periodYear=Number(y.value);state.draft={};await refresh()};m.onchange=change;y.onchange=change;
 }
 async function init(){setupPeriod();$('loginForm').onsubmit=login;$('logout').onclick=logout;$('menuBtn').onclick=()=>document.querySelector('.sidebar').classList.toggle('show');
- const {data:{session}}=await sb.auth.getSession();if(session){try{await loadContext()}catch(e){console.error('Gagal memulihkan sesi:',e);toast('Sesi login ada, tetapi data aplikasi gagal dimuat: '+e.message,true)}}
+ const {data:{session}}=await sb.auth.getSession();if(session){try{await loadContext()}catch(e){console.error('Gagal memulihkan sesi:',e);loginError('Sesi Auth ada, tetapi profil gagal dimuat: '+e.message)}}
  // Pembaruan berkala hanya pada halaman monitoring, agar draf input ULP tidak terganggu.
  setInterval(async()=>{if(!state.profile||!['dashboard','verify','pekerjaan'].includes(state.page))return;try{await Promise.all([loadMaster(),fetchRows()]);showPage(state.page)}catch(e){console.warn('Auto-refresh:',e.message)}},30000);
 }
