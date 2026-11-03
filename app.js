@@ -184,11 +184,11 @@ async function submitReport(id,button){
  }catch(e){err(e)}finally{busy(button,false)}
 }
 function renderUpdate(){if(!isAdmin())return showPage('dashboard');
- const jobs=state.jobs;h(`<div class="tabs"><button class="tab active" data-utab="create">＋ Tambah Pekerjaan</button><button class="tab" data-utab="upload">⇧ Upload Target</button><button class="tab" data-utab="manage">▤ Daftar Pekerjaan</button></div><div id="updatePane"></div>`);
+ h(`<div class="tabs"><button class="tab active" data-utab="create">＋ Tambah Pekerjaan</button><button class="tab" data-utab="upload">⇧ Upload Target</button><button class="tab" data-utab="manage">▤ Daftar Pekerjaan</button></div><div id="updatePane"></div>`);
  document.querySelectorAll('[data-utab]').forEach(b=>b.onclick=()=>{document.querySelectorAll('[data-utab]').forEach(x=>x.classList.toggle('active',x===b));renderUpdateTab(b.dataset.utab)});
  renderUpdateTab('create');
 }
-function renderUpdateTab(tab){const node=$('updatePane');
+function renderUpdateTab(tab){const node=$('updatePane');const jobs=state.jobs.filter(j=>j.active);
  if(tab==='create'){
  node.innerHTML=`<section class="panel"><h3>Tambah Pekerjaan Baru</h3><div class="panel-sub">Admin menentukan dua bagian template dalam satu pekerjaan. Nama kolom dipisah baris atau koma.</div>
  <form id="newJobForm" class="form-grid" style="margin-top:23px">
@@ -201,11 +201,13 @@ function renderUpdateTab(tab){const node=$('updatePane');
  node.innerHTML=`<section class="panel"><h3>Upload Target Bulanan</h3><div class="panel-sub">Periode aktif: ${period()}. File Excel wajib berisi kolom <b>UNITUP</b> dan kolom sesuai Template 1. Data target dipetakan per kode ULP.</div>
  <div class="form-grid" style="margin-top:20px"><label class="wide">Judul Pekerjaan<select id="importJob"><option value="">Pilih pekerjaan</option>${jobs.map(j=>`<option value="${j.id}">${esc(j.title)}</option>`).join('')}</select></label>
  <label class="wide">File Excel Target (.xlsx / .xls)<input id="uploadFile" type="file" accept=".xlsx,.xls,.csv"></label></div>
- <div class="toolbar" style="margin:17px 0"><button class="btn" id="downloadBlank">↓ Download Template Target</button><button class="btn primary" id="uploadRun">⇧ Upload & Simpan Target</button></div>
+ <div class="notice">① Pilih pekerjaan → ② Download template Excel pekerjaan tersebut → ③ Isi data target dan kode UNITUP di setiap baris → ④ Upload kembali file yang sudah diisi. Template realisasi tidak ikut diisi saat upload target.</div><div class="toolbar" style="margin:17px 0"><button class="btn" id="downloadBlank">↓ Download Template Pekerjaan Terpilih</button><button class="btn primary" id="uploadRun">⇧ Upload Target Per UNITUP</button></div>
  <div id="importPreview" class="notice">Pilih pekerjaan dan file Excel untuk melihat pratinjau.</div></section>`;
  $('downloadBlank').onclick=downloadTemplate;$('uploadFile').onchange=previewImport;$('importJob').onchange=previewImport;$('uploadRun').onclick=uploadImport;
  }else{
- node.innerHTML=`<section class="panel"><div class="section-head"><div><h3>Daftar Pekerjaan</h3><div class="panel-sub">Judul dan konfigurasi dua template yang telah disimpan.</div></div></div><div class="table-scroll"><table class="data-table"><thead><tr><th>Judul</th><th>Template Target</th><th>Template Realisasi</th><th>Status</th></tr></thead><tbody>${jobs.map(j=>`<tr><td><b>${esc(j.title)}</b></td><td>${esc(columns(j,'target_columns').join(', '))}</td><td>${esc(columns(j,'report_columns').join(', '))}</td><td>${j.active?'Aktif':'Nonaktif'}</td></tr>`).join('')||'<tr><td colspan="4">Belum ada pekerjaan.</td></tr>'}</tbody></table></div></section>`;
+ node.innerHTML=`<section class="panel"><div class="section-head"><div><h3>Daftar Pekerjaan</h3><div class="panel-sub">Kelola pekerjaan dan download template target per judul. Hapus pekerjaan akan menghapus seluruh target dan laporan terkait.</div></div></div><div class="table-scroll"><table class="data-table"><thead><tr><th>Judul</th><th>Template Target</th><th>Template Realisasi</th><th>Aksi</th></tr></thead><tbody>${jobs.map(j=>`<tr><td><b>${esc(j.title)}</b></td><td>${esc(columns(j,'target_columns').join(', '))}</td><td>${esc(columns(j,'report_columns').join(', '))}</td><td><div class="toolbar"><button class="btn" data-templatejob="${j.id}">↓ Template</button><button class="btn danger" data-deletejob="${j.id}">✕ Hapus</button></div></td></tr>`).join('')||'<tr><td colspan="4">Belum ada pekerjaan.</td></tr>'}</tbody></table></div></section>`;
+ document.querySelectorAll('[data-templatejob]').forEach(btn=>btn.onclick=()=>downloadTemplateForJob(btn.dataset.templatejob));
+ document.querySelectorAll('[data-deletejob]').forEach(btn=>btn.onclick=()=>deleteJob(btn.dataset.deletejob,btn));
  }
 }
 async function createJob(ev){ev.preventDefault();const title=$('jobTitle').value.trim(),tc=parseCols($('targetCols').value),rc=parseCols($('reportCols').value);
@@ -213,16 +215,50 @@ async function createJob(ev){ev.preventDefault();const title=$('jobTitle').value
  if(tc.some(c=>rc.includes(c)))return toast('Nama kolom target dan realisasi tidak boleh sama.',true);
  if(title.length<3)return toast('Judul minimal tiga karakter.',true);
  const btn=ev.target.querySelector('button[type=submit]');busy(btn,true);
- try{const {error}=await sb.from('billing_jobs').insert({title,target_columns:tc,report_columns:rc});if(error)throw error;await loadMaster();toast('Pekerjaan baru dan kedua template berhasil disimpan.');renderUpdateTab('manage')}catch(e){err(e)}finally{busy(btn,false)}
+ try{
+  const {data,error}=await sb.from('billing_jobs').insert({title,target_columns:tc,report_columns:rc}).select('id,title').single();
+  if(error)throw error;
+  // Insert berhasil. Bila pembaruan daftar gagal, jangan memberi kesan insert gagal lalu membuat duplikat.
+  toast(`Pekerjaan "${data.title}" berhasil disimpan.`);
+  try{await loadMaster();renderUpdateTab('manage')}
+  catch(refreshError){console.error('Refresh daftar pekerjaan:',refreshError);toast('Pekerjaan berhasil dibuat, tetapi daftar gagal diperbarui: '+refreshError.message,true)}
+ }catch(e){err(e)}finally{busy(btn,false)}
 }
 function requireXLSX(){if(!window.XLSX)throw new Error('Pustaka Excel gagal dimuat. Cek internet lalu refresh halaman.');return window.XLSX}
 function exportWorkbook(filename,rows,sheet='Laporan'){
  const XLSX=requireXLSX();const sheetObj=XLSX.utils.json_to_sheet(rows);sheetObj['!cols']=(Object.keys(rows[0]||{})).map(k=>({wch:Math.min(38,Math.max(14,k.length+4))}));
  const book=XLSX.utils.book_new();XLSX.utils.book_append_sheet(book,sheetObj,sheet.slice(0,31));XLSX.writeFile(book,filename,{bookType:'xlsx'});
 }
-function downloadTemplate(){try{const job=jobBy($('importJob').value);if(!job)throw new Error('Pilih pekerjaan terlebih dahulu');
- const keys=['UNITUP',...columns(job,'target_columns').filter(c=>key(c)!=='UNITUP')];const example={};keys.forEach(k=>example[k]='');exportWorkbook('Template_Target_'+safeFile(job.title)+'.xlsx',[example],'Target');toast('Template target berhasil dibuat.');
+function downloadTemplate(){downloadTemplateForJob($('importJob')?.value)}
+function downloadTemplateForJob(jobId){try{
+ const job=jobBy(jobId);if(!job)throw new Error('Pilih pekerjaan terlebih dahulu');
+ const XLSX=requireXLSX();const keys=['UNITUP',...columns(job,'target_columns').filter(c=>key(c)!=='UNITUP')];
+ const wb=XLSX.utils.book_new();
+ // Sheet target hanya memuat HEADER, tidak ada baris fiktif yang ikut ter-upload.
+ const ws=XLSX.utils.aoa_to_sheet([keys]);ws['!cols']=keys.map(k=>({wch:Math.max(17,Math.min(38,k.length+6))}));
+ XLSX.utils.book_append_sheet(wb,ws,'TARGET');
+ // Referensi kode ULP agar Admin tinggal menyalin UNITUP yang benar.
+ const refs=[['UNITUP','NAMA ULP','UNITAP / UP3'],...state.units.map(u=>[u.code,u.name,u.up3_code])];
+ const refWs=XLSX.utils.aoa_to_sheet(refs);refWs['!cols']=[{wch:16},{wch:32},{wch:20}];
+ XLSX.utils.book_append_sheet(wb,refWs,'REFERENSI ULP');
+ XLSX.writeFile(wb,'Template_Target_'+safeFile(job.title)+'.xlsx',{bookType:'xlsx'});
+ toast('Template '+job.title+' berhasil diunduh. Isi sheet TARGET, lalu upload kembali.');
  }catch(e){err(e)}}
+async function deleteJob(id,button){
+ const job=jobBy(id);if(!job)return toast('Pekerjaan tidak ditemukan.',true);
+ const count=await sb.from('billing_targets').select('id',{count:'exact',head:true}).eq('job_id',id);
+ if(count.error)return err(count.error);
+ const total=count.count||0;
+ const detail=total?`PERHATIAN: ${total} baris target dan seluruh realisasinya akan IKUT TERHAPUS secara permanen.`:'Belum ada target yang terkait pekerjaan ini.';
+ if(!confirm(`Hapus pekerjaan "${job.title}"?\n\n${detail}\n\nAksi ini tidak bisa dibatalkan.`))return;
+ const confirmTitle=prompt(`Ketik judul pekerjaan PERSIS untuk mengonfirmasi penghapusan:\n${job.title}`);
+ if(confirmTitle!==job.title)return toast('Penghapusan dibatalkan (judul tidak cocok).',true);
+ busy(button,true);
+ try{
+  const {error}=await sb.rpc('billing_delete_job',{p_job:id});if(error)throw error;
+  await Promise.all([loadMaster(),fetchRows()]);toast('Pekerjaan berhasil dihapus.');renderUpdateTab('manage');
+ }catch(e){err(e)}finally{busy(button,false)}
+}
 function safeFile(s){return String(s||'Pekerjaan').replace(/[^a-zA-Z0-9_-]+/g,'_').slice(0,70)}
 async function getExcelRows(file){
  const XLSX=requireXLSX(),buf=await file.arrayBuffer(),wb=XLSX.read(buf,{type:'array',raw:false});const sheet=wb.Sheets[wb.SheetNames[0]];
@@ -237,11 +273,11 @@ async function previewImport(){
  try{const rows=await getExcelRows(file);if(!rows.length)throw new Error('Excel tidak memiliki baris data');
  const headers=Object.keys(rows[0]);const targetCols=columns(job,'target_columns');const unitHeader=headers.find(x=>key(x)==='UNITUP');
  if(!unitHeader)throw new Error('Kolom UNITUP wajib ada di Excel, untuk menentukan pemilik target ULP.');
- const missing=targetCols.filter(c=>!headers.includes(c));if(missing.length)throw new Error('Kolom Template 1 tidak ditemukan: '+missing.join(', '));
- const invalid=[...new Set(rows.map(r=>r[unitHeader]).filter(c=>!state.units.some(u=>u.code===c)))];
+ const missing=targetCols.filter(c=>!headers.some(h=>key(h)===key(c)));if(missing.length)throw new Error('Kolom Template 1 tidak ditemukan: '+missing.join(', '));
+ const invalid=[...new Set(rows.map(r=>String(r[unitHeader]).trim()).filter(c=>!state.units.some(u=>u.code===c)))];
  if(invalid.length)throw new Error('Kode UNITUP tidak terdaftar di master billing_ulp: '+invalid.slice(0,20).join(', '));
  const sourceKeyHeader=headers.find(x=>key(x)==='IDPEL')||headers.find(x=>key(x)==='NO METER')||null;
- state.importRows=rows.map((r,i)=>({ulp:r[unitHeader],key:sourceKeyHeader?String(r[sourceKeyHeader]).trim():String(i+2),data:Object.fromEntries(targetCols.map(c=>[c,r[c]]))}));state.importJob=job.id;
+ state.importRows=rows.map((r,i)=>({ulp:String(r[unitHeader]).trim(),key:sourceKeyHeader?String(r[sourceKeyHeader]).trim():String(i+2),data:Object.fromEntries(targetCols.map(c=>[c,r[headers.find(h=>key(h)===key(c))]]))}));state.importJob=job.id;
  if(sourceKeyHeader&&state.importRows.some(r=>!r.key))throw new Error(`Kolom ${sourceKeyHeader} memiliki nilai kosong.`);
  const identities=state.importRows.map(r=>r.ulp+'|'+r.key);if(new Set(identities).size!==identities.length)throw new Error('Ada IDPEL/nomor meter/kunci baris yang duplikat pada UNITUP yang sama.');
  out.innerHTML=`<b>Siap di-upload:</b> ${rows.length} baris dari ${new Set(rows.map(x=>x[unitHeader])).size} ULP, untuk ${esc(job.title)} (${period()}).<br><small>Preview baris pertama: ${esc(JSON.stringify(state.importRows[0].data).slice(0,350))}</small><br><small>Upload ulang dengan kunci baris sama akan memperbarui data target tanpa menghapus realisasi.</small>`;
