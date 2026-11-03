@@ -68,7 +68,7 @@ async function loadContext(){
 }
 function renderNav(){
  const nav=[['dashboard','▦','Dashboard'],['pekerjaan','▤','Pekerjaan']];
- if(isAdmin())nav.push(['update','⇧','Update Pekerjaan'],['verify','✓','Verifikasi Pekerjaan']);
+ if(isAdmin())nav.push(['update','⇧','Update Pekerjaan']);
  $('nav').innerHTML=nav.map(([id,ico,label])=>`<button class="nav-item" data-page="${id}"><span class="nav-ico">${ico}</span>${label}</button>`).join('');
  document.querySelectorAll('[data-page]').forEach(b=>b.onclick=()=>showPage(b.dataset.page));
 }
@@ -89,7 +89,12 @@ function up3Label(code){const u=state.up3.find(x=>x.code===code);return u?`${cod
 function up3For(ulp){return state.units.find(x=>x.code===ulp)?.up3_code||'-'}
 function jobBy(id){return state.jobs.find(j=>j.id===id)}
 function groupStats(rows){const total=rows.length;const approved=rows.filter(x=>x.status==='APPROVED').length;const pending=rows.filter(x=>x.status==='PENDING').length;const rejected=rows.filter(x=>x.status==='REJECTED').length;return{total,approved,pending,rejected,remain:total-approved-pending,pct:pct(approved,total)}}
-function statCard(label,val,sub){return `<div class="stat"><span>${esc(label)}</span><strong>${esc(val)}</strong><small>${esc(sub)}</small></div>`}
+function statCard(label,val,sub,clickVerify=false){
+ const body=`<span>${esc(label)}</span><strong>${esc(val)}</strong><small>${esc(sub)}${clickVerify?' · Klik untuk verifikasi':''}</small>`;
+ return clickVerify
+  ? `<button type="button" id="goVerifyDashboard" class="stat" style="text-align:left;cursor:pointer;width:100%;font:inherit;border:1px solid #d3dfed" title="Buka Verifikasi Pekerjaan">${body}</button>`
+  : `<div class="stat">${body}</div>`;
+}
 function dashboardMatrix(){
  const jobs=state.jobs.filter(j=>j.active),units=isAdmin()?state.up3.map(x=>({code:x.code,name:x.name})):isUP3()?state.units.filter(u=>u.up3_code===state.profile.up3_code):[{code:state.profile.ulp_code,name:unitLabel(state.profile.ulp_code)}];
  if(!jobs.length)return '<div class="empty"><strong>Belum ada pekerjaan</strong>Admin bisa membuat judul baru di Update Pekerjaan.</div>';
@@ -105,9 +110,10 @@ function dashboardMatrix(){
 function renderDashboard(){
  const stats=groupStats(state.rows);const entityLabel=isAdmin()?'Seluruh UP3':isUP3()?up3Label(state.profile.up3_code):unitLabel(state.profile.ulp_code);
  h(`<div class="section-head"><div><h3>Ringkasan Realisasi</h3><div class="panel-sub">${esc(entityLabel)} · ${period()} · Hanya hasil yang disetujui Admin dihitung sebagai realisasi.</div></div><button class="btn" id="refreshDashboard">↻ Refresh</button></div>
- <div class="grid stats">${statCard('Total Target',stats.total,'Seluruh baris target')}${statCard('Realisasi Disetujui',stats.approved,'Lolos verifikasi')}${statCard('Menunggu Verifikasi',stats.pending,'Sedang diperiksa Admin')}${statCard('Capaian',stats.pct+'%','Disetujui / Target')}</div>
+ <div class="grid stats">${statCard('Total Target',stats.total,'Seluruh baris target')}${statCard('Realisasi Disetujui',stats.approved,'Lolos verifikasi')}${statCard('Menunggu Verifikasi',stats.pending,'Sedang diperiksa Admin',isAdmin())}${statCard('Capaian',stats.pct+'%','Disetujui / Target')}</div>
  <section class="panel"><div class="section-head"><div><h3>${isAdmin()?'Realisasi per UP3 & Pekerjaan':isUP3()?'Realisasi per ULP & Pekerjaan':'Realisasi Pekerjaan ULP'}</h3><div class="panel-sub">Klik angka untuk melihat rincian.</div></div></div>${dashboardMatrix()}<div id="drillDown"></div></section>`);
  $('refreshDashboard').onclick=refresh;
+ if(isAdmin()&&$('goVerifyDashboard'))$('goVerifyDashboard').onclick=()=>showPage('verify');
  document.querySelectorAll('[data-matrix]').forEach(e=>e.onclick=()=>renderDrill(e.dataset.matrix,e.dataset.job));
 }
 function renderDrill(unit,jobid){
@@ -216,8 +222,12 @@ function renderUpdateTab(tab){const node=$('updatePane');const jobs=state.jobs.f
  <div class="form-grid" style="margin-top:20px"><label class="wide">Judul Pekerjaan<select id="importJob"><option value="">Pilih pekerjaan</option>${jobs.map(j=>`<option value="${j.id}">${esc(j.title)}</option>`).join('')}</select></label>
  <label class="wide">File Excel Target (.xlsx / .xls)<input id="uploadFile" type="file" accept=".xlsx,.xls,.csv"></label></div>
  <div class="notice">① Pilih pekerjaan → ② Download template Excel pekerjaan tersebut → ③ Isi data target dan kode UNITUP di setiap baris → ④ Upload kembali file yang sudah diisi. Template realisasi tidak ikut diisi saat upload target.</div><div class="toolbar" style="margin:17px 0"><button class="btn" id="downloadBlank">↓ Download Template Pekerjaan Terpilih</button><button class="btn primary" id="uploadRun">⇧ Upload Target Per UNITUP</button></div>
- <div id="importPreview" class="notice">Pilih pekerjaan dan file Excel untuk melihat pratinjau.</div></section>`;
- $('downloadBlank').onclick=downloadTemplate;$('uploadFile').onchange=previewImport;$('importJob').onchange=previewImport;$('uploadRun').onclick=uploadImport;
+ <div id="importPreview" class="notice">Pilih file Excel, lalu klik Upload Target. Tidak perlu preview.</div></section>`;
+ $('downloadBlank').onclick=downloadTemplate;
+ // Jangan baca dan validasi Excel dua kali. Pembacaan hanya saat klik Upload.
+ $('uploadFile').onchange=()=>importFeedback('File siap di-upload: '+($('uploadFile').files?.[0]?.name||'-'));
+ $('importJob').onchange=()=>importFeedback('Pekerjaan terpilih. Pilih file, lalu klik Upload Target.');
+ $('uploadRun').onclick=uploadImport;
  }else{
  node.innerHTML=`<section class="panel"><div class="section-head"><div><h3>Daftar Pekerjaan</h3><div class="panel-sub">Kelola pekerjaan dan download template target per judul. Hapus pekerjaan akan menghapus seluruh target dan laporan terkait.</div></div></div><div class="table-scroll"><table class="data-table"><thead><tr><th>Judul</th><th>Template Target</th><th>Template Realisasi</th><th>Aksi</th></tr></thead><tbody>${jobs.map(j=>`<tr><td><b>${esc(j.title)}</b></td><td>${esc(columns(j,'target_columns').join(', '))}</td><td>${esc(columns(j,'report_columns').join(', '))}</td><td><div class="toolbar"><button class="btn" data-templatejob="${j.id}">↓ Template</button><button class="btn danger" data-deletejob="${j.id}">✕ Hapus</button></div></td></tr>`).join('')||'<tr><td colspan="4">Belum ada pekerjaan.</td></tr>'}</tbody></table></div></section>`;
  document.querySelectorAll('[data-templatejob]').forEach(btn=>btn.onclick=()=>downloadTemplateForJob(btn.dataset.templatejob));
@@ -284,7 +294,7 @@ async function getExcelRows(file){
    .filter(row=>Object.values(row).some(v=>v!==''));
 }
 function importFeedback(message,isError=false){
- const out=$('importPreview');if(out)out.innerHTML=`<div style="white-space:normal;line-height:1.65;${isError?'color:#b33b38':''}">${isError?'<b>Preview gagal — target belum di-upload.</b><br>':''}${esc(message)}</div>`;
+ const out=$('importPreview');if(out)out.innerHTML=`<div style="white-space:normal;line-height:1.65;${isError?'color:#b33b38':''}">${isError?'<b>Upload belum berhasil.</b><br>':''}${esc(message)}</div>`;
 }
 // FIX: Preview is informational. Upload always parses the selected file itself.
 // This avoids stale importRows or an async onchange race blocking valid files.
@@ -339,7 +349,7 @@ async function uploadImport(){
  const btn=$('uploadRun');
  let total=0,successful=0,failed=[];
  try{
-  importFeedback('Memeriksa file Excel sebelum upload...');
+  importFeedback('Membaca file Excel...');
   const {job,incoming}=await parseSelectedTarget();
   total=incoming.length;
   state.importRows=incoming;state.importJob=job.id;
