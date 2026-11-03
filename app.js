@@ -17,7 +17,7 @@ const toast=(message,error=false)=>{const t=$('toast');t.textContent=message;t.c
 const err=e=>toast(e?.message||String(e),true);
 function busy(button,on=true){if(button){button.disabled=on;button.dataset.original ||= button.textContent;button.textContent=on?'Memproses...':button.dataset.original;}}
 function h(html){$('mainContent').innerHTML=html;}
-function pct(n,d){return d?Math.round(n*1000/d)/10:0}
+function pct(n,d){return d>0?Math.round(n*1000/d)/10:(n===0?100:0)}
 function badge(s){return `<span class="pill ${esc(s)}">${esc(STATUS[s]||s)}</span>`}
 function period(){return `${MONTHS[state.periodMonth-1]} ${state.periodYear}`}
 function parseCols(text){return [...new Set(text.split(/\r?\n|,/).map(s=>s.trim()).filter(Boolean))]}
