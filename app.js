@@ -286,78 +286,89 @@ async function getExcelRows(file){
 function importFeedback(message,isError=false){
  const out=$('importPreview');if(out)out.innerHTML=`<div style="white-space:normal;line-height:1.65;${isError?'color:#b33b38':''}">${isError?'<b>Preview gagal — target belum di-upload.</b><br>':''}${esc(message)}</div>`;
 }
+// FIX: Preview is informational. Upload always parses the selected file itself.
+// This avoids stale importRows or an async onchange race blocking valid files.
+async function parseSelectedTarget(){
+ const chosen=$('importJob')?.value;
+ const job=jobBy(chosen);
+ if(!job)throw new Error('Pilih judul pekerjaan terlebih dahulu.');
+ const file=$('uploadFile')?.files?.[0];
+ if(!file)throw new Error('Pilih file Excel yang sudah diisi terlebih dahulu.');
+ const rows=await getExcelRows(file);
+ const headers=[...new Set(rows.flatMap(r=>Object.keys(r)))];
+ const norm=s=>String(s??'').replace(/\uFEFF/g,'').trim().toUpperCase().replace(/[\s_.-]+/g,'');
+ const findHeader=name=>headers.find(h=>norm(h)===norm(name));
+ const unitHeader=findHeader('UNITUP');
+ if(!unitHeader)throw new Error('Kolom UNITUP tidak ditemukan. Kolom terbaca: '+headers.join(', '));
+ const targetCols=columns(job,'target_columns').filter(c=>norm(c)!=='UNITUP');
+ const missing=targetCols.filter(c=>!findHeader(c));
+ if(missing.length)throw new Error('Kolom template belum cocok: '+missing.join(', ')+'. Kolom Excel: '+headers.join(', '));
+ const ulpCode=x=>String(x??'').trim().replace(/\.0+$/,'');
+ const parsed=rows.map((r,i)=>({r,i,unit:ulpCode(r[unitHeader])})).filter(x=>Object.values(x.r).some(v=>String(v??'').trim()!==''));
+ if(!parsed.length)throw new Error('Sheet TARGET tidak memiliki data.');
+ const noUnit=parsed.filter(x=>!x.unit);
+ if(noUnit.length)throw new Error('UNITUP kosong pada baris Excel '+(noUnit[0].i+2));
+ const known=new Set((state.units||[]).map(u=>String(u.code).trim()));
+ const unknown=[...new Set(parsed.map(x=>x.unit).filter(c=>!known.has(c)))];
+ if(unknown.length)throw new Error('UNITUP belum terdaftar di billing_ulp: '+unknown.join(', ')+'. UNITUP 14460 boleh di-upload sendirian.');
+ const sourceKeyHeader=findHeader('IDPEL')||findHeader('NO METER')||findHeader('NOMOR METER');
+ const incoming=parsed.map(({r,i,unit})=>({
+  ulp:unit,
+  key:sourceKeyHeader?String(r[sourceKeyHeader]??'').trim():String(i+2),
+  data:Object.fromEntries(targetCols.map(c=>[c,String(r[findHeader(c)]??'').trim()]))
+ }));
+ if(incoming.some(x=>!x.key))throw new Error('IDPEL / nomor meter kosong pada salah satu baris.');
+ const identities=incoming.map(r=>r.ulp+'|'+r.key);
+ if(new Set(identities).size!==identities.length)throw new Error('Ada IDPEL/nomor meter duplikat pada UNITUP yang sama.');
+ return {job,incoming};
+}
 async function previewImport(){
  state.importRows=[];state.importJob=null;
- const select=$('importJob'),fileInput=$('uploadFile');
- const job=jobBy(select?.value),file=fileInput?.files?.[0];
- if(!job){importFeedback('Pilih judul pekerjaan terlebih dahulu.');return}
- if(!file){importFeedback('Pilih file Excel yang telah diisi pada sheet TARGET.');return}
- importFeedback('Sedang membaca file Excel...');
+ if(!$('importJob')?.value){importFeedback('Pilih pekerjaan terlebih dahulu.');return}
+ if(!$('uploadFile')?.files?.length){importFeedback('Pilih file Excel yang sudah diisi.');return}
+ importFeedback('Membaca file Excel...');
  try{
-  const rows=await getExcelRows(file);
-  const headers=Object.keys(rows[0]);
-  const targetCols=columns(job,'target_columns');
-  const norm=s=>key(s).replace(/[\s_-]+/g,'');
-  const findHeader=name=>headers.find(h=>norm(h)===norm(name));
-  const unitHeader=findHeader('UNITUP');
-  if(!unitHeader)throw new Error('Kolom UNITUP belum ditemukan pada baris header. Kolom terdeteksi: '+headers.join(', '));
-  const missing=targetCols.filter(c=>!findHeader(c));
-  if(missing.length)throw new Error('Kolom Template 1 belum sesuai: '+missing.join(', ')+'. Kolom terdeteksi: '+headers.join(', '));
-  const ulpCode=c=>String(c??'').trim().replace(/\.0+$/,'');
-  const invalid=[...new Set(rows.map(r=>ulpCode(r[unitHeader])).filter(c=>!state.units.some(u=>String(u.code)===c)))];
-  if(invalid.length)throw new Error('UNITUP yang belum terdaftar di master billing_ulp: '+invalid.join(', ')+'. UNITUP 14460 SAJA BOLEH di-upload tanpa menunggu ULP lain dibuat.');
-  const sourceKeyHeader=findHeader('IDPEL')||findHeader('NO METER')||findHeader('NOMOR METER')||null;
-  const incoming=rows.map((r,i)=>({
-   ulp:ulpCode(r[unitHeader]),
-   key:sourceKeyHeader?String(r[sourceKeyHeader]).trim():String(i+2),
-   data:Object.fromEntries(targetCols.map(c=>[c,r[findHeader(c)]??'']))
-  }));
-  if(sourceKeyHeader&&incoming.some(r=>!r.key))throw new Error(`Kolom ${sourceKeyHeader} ada yang kosong. Isi semua kunci baris.`);
-  const identities=incoming.map(r=>r.ulp+'|'+r.key);
-  if(new Set(identities).size!==identities.length)throw new Error('Ada IDPEL/nomor meter/kunci baris duplikat untuk UNITUP yang sama.');
+  const {job,incoming}=await parseSelectedTarget();
+  // Ignore outdated preview results if user has switched jobs or files.
+  if($('importJob')?.value!==String(job.id))return;
   state.importRows=incoming;state.importJob=job.id;
-  const units=[...new Set(incoming.map(r=>r.ulp))].join(', ');
-  const out=$('importPreview');
-  out.innerHTML=`<b style="color:#13855c">✓ Preview berhasil — siap upload</b><br>${incoming.length} baris target · UNITUP: <b>${esc(units)}</b> · ${esc(job.title)} · ${period()}<br><small>Contoh data: ${esc(JSON.stringify(incoming[0].data).slice(0,350))}</small>`;
- }catch(e){state.importRows=[];state.importJob=null;importFeedback(e.message,true);console.error('Preview upload BILLINGS2JB:',e);}
+  importFeedback(`✓ Preview berhasil. ${incoming.length} baris untuk UNITUP: ${[...new Set(incoming.map(x=>x.ulp))].join(', ')} — ${job.title}. Klik Upload Target.`);
+ }catch(e){importFeedback(e.message,true);console.error('Preview target:',e)}
 }
 async function uploadImport(){
  const btn=$('uploadRun');
- if(!state.importRows.length||state.importJob!==$('importJob')?.value){
-  const file=$('uploadFile')?.files?.[0];
-  if(file&&$('importJob')?.value)await previewImport();
-  if(!state.importRows.length||state.importJob!==$('importJob')?.value){
-   toast('Preview belum berhasil. Perhatikan pesan di bawah tombol Upload Target.',true);return;
-  }
- }
- const jobId=state.importJob, rowsToImport=[...state.importRows];
- const year=state.periodYear,month=state.periodMonth;
- if(!confirm(`Upload ${rowsToImport.length} target ke ${period()}?`))return;
- busy(btn,true);let successful=0;
+ let successful=0;
+ let total=0;
  try{
-  for(const r of rowsToImport){
+  // Always parse the current file on click; preview is NEVER a prerequisite.
+  importFeedback('Memeriksa file Excel sebelum upload...');
+  const {job,incoming}=await parseSelectedTarget();
+  total=incoming.length;
+  state.importRows=incoming;state.importJob=job.id;
+  const jobId=job.id,year=state.periodYear,month=state.periodMonth;
+  if(!confirm(`Upload ${incoming.length} baris target (${[...new Set(incoming.map(r=>r.ulp))].join(', ')}) untuk ${period()}?`)){
+   importFeedback('Upload dibatalkan. File tetap siap di-upload.');return;
+  }
+  busy(btn,true);
+  for(const r of incoming){
    const {error}=await sb.rpc('billing_import_target',{p_job:jobId,p_year:year,p_month:month,p_ulp:r.ulp,p_key:r.key,p_data:r.data});
-   if(error)throw new Error(`Baris ${successful+1} · UNITUP ${r.ulp}: ${error.message}`);
+   if(error)throw new Error(`Baris ${successful+1} / UNITUP ${r.ulp}: ${error.message}`);
    successful++;
   }
-  // Verifikasi ke database pada periode yang sama, bukan hanya mempercayai pesan RPC sukses.
-  const {data:check,error:checkErr}=await sb.from('billing_targets')
-    .select('id,ulp_code,source_key,period_year,period_month,job_id,status')
-    .eq('job_id',jobId).eq('period_year',year).eq('period_month',month)
-    .range(0,Math.max(999,rowsToImport.length+25));
-  if(checkErr)throw new Error('Upload terkirim, tetapi pengecekan database gagal: '+checkErr.message);
-  const seen=new Set((check||[]).map(r=>String(r.ulp_code)+'|'+String(r.source_key)));
-  const missing=rowsToImport.filter(r=>!seen.has(String(r.ulp)+'|'+String(r.key)));
-  if(missing.length)throw new Error(`${successful} baris dikirim tetapi ${missing.length} belum terbaca di database. Contoh: UNITUP ${missing[0].ulp} / kunci ${missing[0].key}. Periksa RLS/SQL dan jangan upload berulang dulu.`);
+  // Verify all submitted identities, not just the number returned by RPC.
+  const check=await listAll('billing_targets',q=>q.eq('job_id',jobId).eq('period_year',year).eq('period_month',month),'id,ulp_code,source_key');
+  const seen=new Set(check.map(r=>String(r.ulp_code)+'|'+String(r.source_key)));
+  const missing=incoming.filter(r=>!seen.has(r.ulp+'|'+r.key));
+  if(missing.length)throw new Error(`Upload berjalan tetapi ${missing.length} baris tidak terbaca kembali. UNITUP ${missing[0].ulp}, ID ${missing[0].key}. Periksa RLS/SQL sebelum mencoba ulang.`);
   await Promise.all([loadMaster(),fetchRows()]);
-  const onPage=state.rows.filter(r=>r.job_id===jobId);
-  if(!onPage.length)throw new Error(`Target ditemukan di database, tetapi daftar Pekerjaan ${period()} masih kosong. Periksa sesi login dan filter periode.`);
-  // Langsung buka detail pekerjaan agar hasil upload terlihat.
+  importFeedback(`✓ BERHASIL: ${successful} baris target tersimpan untuk ${job.title} (${period()}).`);
   showPage('detail',{job:jobId});
-  toast(`BERHASIL: ${successful} baris di-upload dan ${onPage.length} target tampil di Pekerjaan (${period()}).`);
+  toast(`${successful} baris target berhasil di-upload dan ditampilkan.`);
  }catch(e){
-  const msg=`${successful} dari ${rowsToImport.length} baris sudah diproses. ${e.message}`;
-  importFeedback(msg,true);toast(msg,true);console.error('Upload BILLINGS2JB:',e);
+  const message=(successful?`${successful} dari ${total} baris diproses. `:'')+e.message;
+  importFeedback(message,true);
+  toast('UPLOAD GAGAL: '+message,true);
+  console.error('Upload target:',e);
  }finally{busy(btn,false)}
 }
 
