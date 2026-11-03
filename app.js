@@ -6,7 +6,7 @@ const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, 
   auth: {persistSession:true, autoRefreshToken:true, detectSessionInUrl:false}
 });
 const $ = id => document.getElementById(id);
-const state = {profile:null, jobs:[], units:[], up3:[], rows:[], page:'dashboard', job:null, periodMonth:new Date().getMonth()+1, periodYear:new Date().getFullYear(), selectedUp3:null, selectedJob:null, draft:{}, importRows:[], importJob:null, archivedEvidence:[], configDraft:[]};
+const state = {profile:null, jobs:[], units:[], up3:[], rows:[], page:'dashboard', job:null, periodMonth:new Date().getMonth()+1, periodYear:new Date().getFullYear(), selectedUp3:null, selectedJob:null, draft:{}, importRows:[], importJob:null, archivedEvidence:[], configDraft:[], periodJobIds:[], verifyJobFilter:"ALL"};
 const MONTHS=['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];
 const EVIDENCE_BUCKET='billing-evidence';
 const STATUS={OPEN:'Belum Dikerjakan',PENDING:'Menunggu Verifikasi',APPROVED:'Diterima',REJECTED:'Ditolak / Revisi'};
@@ -132,7 +132,20 @@ async function loadMaster(){
  if(j.error)throw j.error;if(u.error)throw u.error;if(a.error)throw a.error;
  state.jobs=j.data||[];state.units=u.data||[];state.up3=a.data||[];
 }
-async function fetchRows(){state.rows=await listAll('billing_targets',q=>periodFilter(q));await loadArchives();}
+async function fetchRows(){
+ const [rows,memberships]=await Promise.all([
+   listAll('billing_targets',q=>periodFilter(q)),
+   sb.from('billing_job_periods').select('job_id').eq('period_year',state.periodYear).eq('period_month',state.periodMonth)
+ ]);
+ if(memberships.error)throw new Error('Daftar pekerjaan bulanan: '+memberships.error.message);
+ state.rows=rows;state.periodJobIds=(memberships.data||[]).map(x=>x.job_id);
+ await loadArchives();
+}
+function currentJobs(){
+ const ids=new Set([...(state.periodJobIds||[]),...state.rows.map(r=>r.job_id)]);
+ return state.jobs.filter(j=>j.active&&ids.has(j.id));
+}
+
 async function loadContext(){
  const {data:{user},error}=await sb.auth.getUser();
  if(error)throw new Error('Supabase Auth: '+error.message);
@@ -188,7 +201,7 @@ function statCard(label,val,sub,clickVerify=false){
   : `<div class="stat">${body}</div>`;
 }
 function dashboardMatrix(){
- const jobs=state.jobs.filter(j=>j.active),units=isAdmin()?state.up3.map(x=>({code:x.code,name:x.name})):isUP3()?state.units.filter(u=>u.up3_code===state.profile.up3_code):[{code:state.profile.ulp_code,name:unitLabel(state.profile.ulp_code)}];
+ const jobs=currentJobs(),units=isAdmin()?state.up3.map(x=>({code:x.code,name:x.name})):isUP3()?state.units.filter(u=>u.up3_code===state.profile.up3_code):[{code:state.profile.ulp_code,name:unitLabel(state.profile.ulp_code)}];
  if(!jobs.length)return '<div class="empty"><strong>Belum ada pekerjaan</strong>Admin bisa membuat judul baru di Update Pekerjaan.</div>';
  if(!units.length)return '<div class="empty">Belum ada master unit untuk akun ini.</div>';
  let html=`<div class="table-scroll"><table class="data-table"><thead><tr><th>${isAdmin()?'UP3':'ULP'}</th>${jobs.map(j=>`<th title="${esc(j.title)}">${esc(j.title)}</th>`).join('')}</tr></thead><tbody>`;
@@ -201,7 +214,7 @@ function dashboardMatrix(){
 }
 function renderDashboard(){
  const entityLabel=isAdmin()?'Seluruh UP3':isUP3()?up3Label(state.profile.up3_code):unitLabel(state.profile.ulp_code);
- const jobs=state.jobs.filter(j=>j.active);
+ const jobs=currentJobs();
  const allStats=groupStats(state.rows);
  const jobCards=jobs.length?jobs.map((job,i)=>{
   const s=groupStats(state.rows.filter(r=>r.job_id===job.id));
@@ -238,7 +251,7 @@ function renderDrill(unit,jobid){
  html+='</tbody></table></div>';$('drillDown').innerHTML=html;$('closeDrill').onclick=()=>$('drillDown').innerHTML='';
 }
 function renderPekerjaan(){
- const jobs=state.jobs.filter(j=>j.active);
+ const jobs=currentJobs();
  h(`<section class="panel"><div class="section-head"><div><h3>Daftar Pekerjaan</h3><div class="panel-sub">${esc(period())} · ${jobs.length} judul pekerjaan</div></div></div>${jobs.length?`<div class="job-list">${jobs.map((j,i)=>{const rs=state.rows.filter(r=>r.job_id===j.id),s=groupStats(rs);return `<button class="job-card" data-openjob="${j.id}"><div class="num">PEKERJAAN ${String(i+1).padStart(2,'0')}</div><b>${esc(j.title)}</b><small>${s.approved}/${s.total} diterima · ${s.pending} menunggu verifikasi</small><div class="meter" style="width:100%;margin-top:13px"><i style="width:${s.pct}%"></i></div></button>`}).join('')}</div>`:'<div class="empty"><strong>Belum ada pekerjaan aktif</strong>Admin dapat membuat pekerjaan baru di menu Update Pekerjaan.</div>'}</section>`);
  document.querySelectorAll('[data-openjob]').forEach(e=>e.onclick=()=>showPage('detail',{job:e.dataset.openjob}));
 }
@@ -329,11 +342,11 @@ async function submitReport(id,button){
 }
 
 function renderUpdate(){if(!isAdmin())return showPage('dashboard');
- h(`<div class="tabs"><button class="tab active" data-utab="create">＋ Tambah Pekerjaan</button><button class="tab" data-utab="upload">⇧ Upload Target</button><button class="tab" data-utab="manage">▤ Daftar Pekerjaan</button></div><div id="updatePane"></div>`);
+ h(`<div class="tabs"><button class="tab active" data-utab="create">＋ Tambah Pekerjaan</button><button class="tab" data-utab="upload">⇧ Upload Target</button><button class="tab" data-utab="copy">↶ Ambil Bulan Lalu</button><button class="tab" data-utab="manage">▤ Daftar Pekerjaan</button></div><div id="updatePane"></div>`);
  document.querySelectorAll('[data-utab]').forEach(b=>b.onclick=()=>{document.querySelectorAll('[data-utab]').forEach(x=>x.classList.toggle('active',x===b));renderUpdateTab(b.dataset.utab)});
  renderUpdateTab('create');
 }
-function renderUpdateTab(tab){const node=$('updatePane');const jobs=state.jobs.filter(j=>j.active);
+function renderUpdateTab(tab){const node=$('updatePane');const jobs=tab==='upload'?currentJobs():state.jobs.filter(j=>j.active);
  if(tab==='create'){
  node.innerHTML=`<section class="panel"><h3>Tambah Pekerjaan Baru</h3><div class="panel-sub">Admin menentukan dua bagian template dalam satu pekerjaan. Nama kolom dipisah baris atau koma.</div>
  <form id="newJobForm" class="form-grid" style="margin-top:23px">
@@ -343,6 +356,16 @@ function renderUpdateTab(tab){const node=$('updatePane');const jobs=state.jobs.f
  <div class="wide"><button class="btn" id="configureFields" type="button">⚙ Atur Jenis Input & Bintang</button><div id="fieldConfigPane" style="margin-top:12px"></div></div>
  <div class="wide toolbar"><button class="btn primary" type="submit">＋ Simpan Pekerjaan & Template</button></div></form></section>`;
  $('newJobForm').onsubmit=createJob;state.configDraft=[];$('configureFields').onclick=renderFieldConfigurator;
+ }else if(tab==='copy'){
+  const source=new Date(state.periodYear,state.periodMonth-2,1);
+  const from=`${MONTHS[source.getMonth()]} ${source.getFullYear()}`;
+  node.innerHTML=`<section class="panel"><div class="section-head"><div><h3>↶ Ambil Judul Pekerjaan Bulan Lalu</h3><div class="panel-sub">Dari <b>${esc(from)}</b> ke <b>${esc(period())}</b></div></div></div>
+  <div class="notice">Hanya mengaktifkan judul pekerjaan beserta Template 1 dan Template 2 yang sudah tersimpan. <b>TARGET PELANGGAN, realisasi, foto, dan status TIDAK disalin.</b></div>
+  <div id="copyJobList" style="margin:16px 0;display:grid;gap:8px">Memuat judul dari bulan sebelumnya...</div>
+  <div class="toolbar"><button type="button" class="btn primary" id="runCopyPrevious" disabled>↶ Ambil Judul Terpilih</button></div>
+  <div id="copyPreviousResult" class="notice" style="margin-top:14px">Setelah memilih judul, upload target baru pada periode ${esc(period())}.</div></section>`;
+  $('runCopyPrevious').onclick=copyPreviousMonth;
+  loadPreviousJobChoices(state.periodYear,state.periodMonth);
  }else if(tab==='upload'){
  node.innerHTML=`<section class="panel"><h3>Upload Target Bulanan</h3><div class="panel-sub">Periode aktif: ${period()}. File Excel wajib berisi kolom <b>UNITUP</b> dan kolom sesuai Template 1. Data target dipetakan per kode ULP.</div>
  <div class="form-grid" style="margin-top:20px"><label class="wide">Judul Pekerjaan<select id="importJob"><option value="">Pilih pekerjaan</option>${jobs.map(j=>`<option value="${j.id}">${esc(j.title)}</option>`).join('')}</select></label>
@@ -361,6 +384,40 @@ function renderUpdateTab(tab){const node=$('updatePane');const jobs=state.jobs.f
  document.querySelectorAll('[data-deletejob]').forEach(btn=>btn.onclick=()=>deleteJob(btn.dataset.deletejob,btn));
  }
 }
+async function loadPreviousJobChoices(year,month){
+ const holder=$('copyJobList'),button=$('runCopyPrevious');
+ if(!holder||!button)return;
+ try{
+  const {data,error}=await sb.rpc('billing_previous_job_ids',{p_year:year,p_month:month});
+  if(error)throw error;
+  if(state.periodYear!==year||state.periodMonth!==month||!holder.isConnected)return;
+  const ids=new Set((data||[]).map(x=>x.job_id));
+  const existing=new Set([...(state.periodJobIds||[]),...state.rows.map(r=>r.job_id)]);
+  const choices=state.jobs.filter(j=>j.active&&ids.has(j.id));
+  holder.innerHTML=choices.length?choices.map(j=>`<label style="display:flex;align-items:center;gap:12px;padding:11px 14px;border:1px solid #e1e8f0;border-radius:10px"><input type="checkbox" data-copy-job="${esc(j.id)}" ${existing.has(j.id)?'disabled':''} style="width:18px;height:18px"><span>${esc(j.title)}${existing.has(j.id)?' <small class="muted">(sudah ada di bulan ini)</small>':''}</span></label>`).join(''):'<div class="empty">Tidak ada pekerjaan di bulan sebelumnya.</div>';
+  button.disabled=!choices.some(j=>!existing.has(j.id));
+ }catch(e){holder.textContent='Gagal memuat judul bulan lalu: '+e.message;err(e)}
+}
+async function copyPreviousMonth(){
+ const ids=[...document.querySelectorAll('[data-copy-job]:checked')].map(e=>e.dataset.copyJob);
+ if(!ids.length)return toast('Centang minimal satu judul pekerjaan.',true);
+ const prev=new Date(state.periodYear,state.periodMonth-2,1);
+ const from=`${MONTHS[prev.getMonth()]} ${prev.getFullYear()}`;
+ if(!confirm(`Aktifkan ${ids.length} judul pekerjaan dari ${from} ke ${period()}?\n\nHanya JUDUL dan TEMPLATE yang digunakan lagi. Tidak ada target pelanggan atau realisasi yang disalin.`))return;
+ const btn=$('runCopyPrevious'),out=$('copyPreviousResult');
+ busy(btn,true);out.textContent='Menyimpan pilihan judul...';
+ try{
+  const {data,error}=await sb.rpc('billing_activate_previous_jobs',{p_year:state.periodYear,p_month:state.periodMonth,p_job_ids:ids});
+  if(error)throw error;
+  await fetchRows();
+  out.textContent=`Berhasil: ${Number(data?.added||0)} judul pekerjaan aktif untuk ${period()}. Target pelanggan tetap kosong sampai Admin meng-upload target baru.`;
+  toast('Judul pekerjaan berhasil diambil. Silakan upload target baru.');
+  // Tetap pada tab ini agar Admin melihat hasil. Refresh pilihan checkbox saja.
+  await loadPreviousJobChoices(state.periodYear,state.periodMonth);
+ }catch(e){out.textContent='Gagal menyimpan judul: '+e.message;err(e)}
+ finally{busy(btn,false)}
+}
+
 function editJobConfig(jobId){
  const job=jobBy(jobId);if(!job||!isAdmin())return;
  const names=columns(job,'report_columns');
@@ -399,6 +456,9 @@ async function createJob(ev){ev.preventDefault();const title=$('jobTitle').value
  try{
   const {data,error}=await sb.from('billing_jobs').insert({title,target_columns:tc,report_columns:rc,report_config:cfg}).select('id,title').single();
   if(error)throw error;
+  const registration=await sb.from('billing_job_periods').upsert({job_id:data.id,period_year:state.periodYear,period_month:state.periodMonth},{onConflict:'job_id,period_year,period_month'});
+  if(registration.error)throw new Error('Judul dibuat, tetapi gagal mengaktifkannya untuk periode '+period()+': '+registration.error.message);
+  state.periodJobIds=[...new Set([...(state.periodJobIds||[]),data.id])];
   // Insert berhasil. Bila pembaruan daftar gagal, jangan memberi kesan insert gagal lalu membuat duplikat.
   toast(`Pekerjaan "${data.title}" berhasil disimpan.`);
   try{await loadMaster();renderUpdateTab('manage')}
@@ -562,20 +622,29 @@ async function uploadImport(){
 }
 
 function renderVerify(){if(!isAdmin())return showPage('dashboard');
- const rows=state.rows.filter(r=>r.status==='PENDING').sort((a,b)=>new Date(a.submitted_at)-new Date(b.submitted_at));
+ const pending=state.rows.filter(r=>r.status==='PENDING').sort((a,b)=>new Date(a.submitted_at)-new Date(b.submitted_at));
  const all=state.rows;const s=groupStats(all);
- let html=`<div class="grid stats">${statCard('Menunggu Verifikasi',s.pending,'Perlu keputusan Admin')}${statCard('Sudah Diterima',s.approved,'Masuk realisasi')}${statCard('Ditolak / Revisi',s.rejected,'Kembali ke ULP')}${statCard('Target Total',s.total,period())}</div><section class="panel"><div class="section-head"><div><h3>Antrean Verifikasi</h3><div class="panel-sub">Klik Terima jika sesuai; klik Tolak untuk mengembalikan pekerjaan ke ULP.</div></div><button class="btn" id="refreshVerify">↻ Refresh</button></div>`;
+ const activePendingIds=new Set(pending.map(r=>r.job_id));
+ const jobs=state.jobs.filter(j=>activePendingIds.has(j.id)).sort((a,b)=>a.title.localeCompare(b.title,'id'));
+ if(state.verifyJobFilter!=='ALL'&&!state.jobs.some(j=>j.id===state.verifyJobFilter))state.verifyJobFilter='ALL';
+ const filtered=state.verifyJobFilter==='ALL'?pending:pending.filter(r=>r.job_id===state.verifyJobFilter);
+ const options='<option value="ALL">Semua pekerjaan ('+pending.length+')</option>'+jobs.map(j=>`<option value="${esc(j.id)}" ${state.verifyJobFilter===j.id?'selected':''}>${esc(j.title)} (${pending.filter(r=>r.job_id===j.id).length})</option>`).join('');
+ let html=`<div class="grid stats">${statCard('Menunggu Verifikasi',s.pending,'Perlu keputusan Admin')}${statCard('Sudah Diterima',s.approved,'Masuk realisasi')}${statCard('Ditolak / Revisi',s.rejected,'Kembali ke ULP')}${statCard('Target Total',s.total,period())}</div><section class="panel"><div class="section-head"><div><h3>Antrean Verifikasi</h3><div class="panel-sub">Pilih pekerjaan yang ingin diperiksa. Terima jika sesuai; tolak agar kembali ke ULP.</div></div><button class="btn" id="refreshVerify">↻ Refresh</button></div>
+ <div style="display:flex;gap:12px;align-items:end;flex-wrap:wrap;margin:16px 0"><label style="min-width:240px;max-width:430px;flex:1;font-weight:700;font-size:13px">Filter Jenis Pekerjaan<select id="verifyJobFilter" style="display:block;width:100%;margin-top:7px">${options}</select></label><div class="notice" style="margin:0;flex:1;min-width:190px">Menampilkan <b>${filtered.length.toLocaleString('id-ID')}</b> dari ${pending.length.toLocaleString('id-ID')} laporan menunggu verifikasi.</div></div>`;
  html+=`<div class="table-scroll"><table class="data-table"><thead><tr><th>Pekerjaan</th><th>ULP</th><th>Data Target</th><th>Realisasi ULP</th><th>Dikirim</th><th>Verifikasi</th></tr></thead><tbody>`;
- if(!rows.length)html+='<tr><td colspan="6"><div class="empty"><strong>Belum ada laporan menunggu verifikasi</strong>Setelah ULP klik Simpan, laporan akan muncul di sini.</div></td></tr>';
- rows.slice(0,60).forEach(r=>{const job=jobBy(r.job_id);
+ if(!filtered.length)html+='<tr><td colspan="6"><div class="empty"><strong>Tidak ada laporan menunggu verifikasi untuk pilihan ini</strong>Pilih pekerjaan lain, atau kembali setelah ULP mengirim laporan.</div></td></tr>';
+ filtered.slice(0,60).forEach(r=>{const job=jobBy(r.job_id);
   const targetFields=columns(job,'target_columns');
   const idField=targetFields.find(c=>key(c)==='IDPEL')||targetFields.find(c=>key(c)==='NOMOR METER')||targetFields[0];
   const target=`${idField||'ID'}: ${r.target_data?.[idField]??r.source_key}`;
   const stars=fieldConfig(job).filter(f=>f.starred);
-  const selected=stars;
-  const report=(selected.length?selected.map(f=>f.type==='photo'?`<div><b>${esc(f.name)}</b><div>${photoHtml(photoDataVal(r.report_data?.[f.name]),photoArchived(r,f.name))}</div></div>`:`<div><b>${esc(f.name)}</b>: ${esc(r.report_data?.[f.name]??'')}</div>`).join(''):'<span class="muted">Belum ada kolom berbintang</span>');
-  html+=`<tr><td><b>${esc(job?.title)}</b></td><td>${esc(unitLabel(r.ulp_code))}</td><td style="white-space:normal;min-width:180px">${esc(target)}</td><td style="white-space:normal;min-width:210px">${report}</td><td>${esc(r.submitted_at?new Date(r.submitted_at).toLocaleString('id-ID'):'-')}</td><td><div class="toolbar"><button class="btn success" data-approve="${r.id}">✓ Terima</button><button class="btn danger" data-reject="${r.id}">✕ Tolak</button></div></td></tr>`; });if(rows.length>60)html+=`<tr><td colspan="6">Menampilkan 60 dari ${rows.length} antrean. Selesaikan sebagian lalu refresh untuk menampilkan berikutnya.</td></tr>`;html+='</tbody></table></div></section>';h(html);
+  const report=(stars.length?stars.map(f=>f.type==='photo'?`<div><b>${esc(f.name)}</b><div>${photoHtml(photoDataVal(r.report_data?.[f.name]),photoArchived(r,f.name))}</div></div>`:`<div><b>${esc(f.name)}</b>: ${esc(r.report_data?.[f.name]??'')}</div>`).join(''):'<span class="muted">Belum ada kolom berbintang</span>');
+  html+=`<tr><td><b>${esc(job?.title)}</b></td><td>${esc(unitLabel(r.ulp_code))}</td><td style="white-space:normal;min-width:180px">${esc(target)}</td><td style="white-space:normal;min-width:210px">${report}</td><td>${esc(r.submitted_at?new Date(r.submitted_at).toLocaleString('id-ID'):'-')}</td><td><div class="toolbar"><button class="btn success" data-approve="${r.id}">✓ Terima</button><button class="btn danger" data-reject="${r.id}">✕ Tolak</button></div></td></tr>`;
+ });
+ if(filtered.length>60)html+=`<tr><td colspan="6">Menampilkan 60 dari ${filtered.length} antrean pada filter ini. Setelah verifikasi sebagian, daftar berikutnya muncul saat refresh.</td></tr>`;
+ html+='</tbody></table></div></section>';h(html);
  $('refreshVerify').onclick=refresh;
+ $('verifyJobFilter').onchange=ev=>{state.verifyJobFilter=ev.target.value;renderVerify()};
  document.querySelectorAll('[data-approve]').forEach(btn=>btn.onclick=()=>verify(btn.dataset.approve,true,btn));
  document.querySelectorAll('[data-reject]').forEach(btn=>btn.onclick=()=>verify(btn.dataset.reject,false,btn));
  hydratePhotos();
