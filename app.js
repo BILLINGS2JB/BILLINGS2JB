@@ -1,4 +1,4 @@
-/* BILLINGS2JB | Pilot 3 akun + perluasan semua unit */
+* BILLINGS2JB | Pilot 3 akun + perluasan semua unit */
 'use strict';
 const SUPABASE_URL = 'https://clobqngkrlpoiwdpezyg.supabase.co';
 const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_jx5V7hD-cf8tXChzbN4grg_bIpcVfVo';
@@ -313,21 +313,40 @@ async function uploadImport(){
   const file=$('uploadFile')?.files?.[0];
   if(file&&$('importJob')?.value)await previewImport();
   if(!state.importRows.length||state.importJob!==$('importJob')?.value){
-   toast('Preview belum berhasil. Baca alasan berwarna merah di bawah tombol Upload Target.',true);return;
+   toast('Preview belum berhasil. Perhatikan pesan di bawah tombol Upload Target.',true);return;
   }
  }
- if(!confirm(`Upload ${state.importRows.length} target untuk ${period()}?`))return;
+ const jobId=state.importJob, rowsToImport=[...state.importRows];
+ const year=state.periodYear,month=state.periodMonth;
+ if(!confirm(`Upload ${rowsToImport.length} target ke ${period()}?`))return;
  busy(btn,true);let successful=0;
  try{
-  for(const r of state.importRows){
-   const {error}=await sb.rpc('billing_import_target',{p_job:state.importJob,p_year:state.periodYear,p_month:state.periodMonth,p_ulp:r.ulp,p_key:r.key,p_data:r.data});
-   if(error)throw new Error(`Baris ${successful+1}, UNITUP ${r.ulp}: ${error.message}`);
+  for(const r of rowsToImport){
+   const {error}=await sb.rpc('billing_import_target',{p_job:jobId,p_year:year,p_month:month,p_ulp:r.ulp,p_key:r.key,p_data:r.data});
+   if(error)throw new Error(`Baris ${successful+1} · UNITUP ${r.ulp}: ${error.message}`);
    successful++;
   }
-  toast(`Berhasil: ${successful} target disimpan untuk ${period()}.`);
-  await refresh(false);renderUpdateTab('upload');
- }catch(e){importFeedback(`${successful} baris sudah berhasil, proses berhenti: ${e.message}`,true);err(e)}finally{busy(btn,false)}
+  // Verifikasi ke database pada periode yang sama, bukan hanya mempercayai pesan RPC sukses.
+  const {data:check,error:checkErr}=await sb.from('billing_targets')
+    .select('id,ulp_code,source_key,period_year,period_month,job_id,status')
+    .eq('job_id',jobId).eq('period_year',year).eq('period_month',month)
+    .range(0,Math.max(999,rowsToImport.length+25));
+  if(checkErr)throw new Error('Upload terkirim, tetapi pengecekan database gagal: '+checkErr.message);
+  const seen=new Set((check||[]).map(r=>String(r.ulp_code)+'|'+String(r.source_key)));
+  const missing=rowsToImport.filter(r=>!seen.has(String(r.ulp)+'|'+String(r.key)));
+  if(missing.length)throw new Error(`${successful} baris dikirim tetapi ${missing.length} belum terbaca di database. Contoh: UNITUP ${missing[0].ulp} / kunci ${missing[0].key}. Periksa RLS/SQL dan jangan upload berulang dulu.`);
+  await Promise.all([loadMaster(),fetchRows()]);
+  const onPage=state.rows.filter(r=>r.job_id===jobId);
+  if(!onPage.length)throw new Error(`Target ditemukan di database, tetapi daftar Pekerjaan ${period()} masih kosong. Periksa sesi login dan filter periode.`);
+  // Langsung buka detail pekerjaan agar hasil upload terlihat.
+  showPage('detail',{job:jobId});
+  toast(`BERHASIL: ${successful} baris di-upload dan ${onPage.length} target tampil di Pekerjaan (${period()}).`);
+ }catch(e){
+  const msg=`${successful} dari ${rowsToImport.length} baris sudah diproses. ${e.message}`;
+  importFeedback(msg,true);toast(msg,true);console.error('Upload BILLINGS2JB:',e);
+ }finally{busy(btn,false)}
 }
+
 function renderVerify(){if(!isAdmin())return showPage('dashboard');
  const rows=state.rows.filter(r=>r.status==='PENDING').sort((a,b)=>new Date(a.submitted_at)-new Date(b.submitted_at));
  const all=state.rows;const s=groupStats(all);
