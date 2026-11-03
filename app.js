@@ -6,7 +6,7 @@ const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, 
   auth: {persistSession:true, autoRefreshToken:true, detectSessionInUrl:false}
 });
 const $ = id => document.getElementById(id);
-const state = {profile:null, jobs:[], units:[], up3:[], rows:[], page:'dashboard', job:null, periodMonth:new Date().getMonth()+1, periodYear:new Date().getFullYear(), selectedUp3:null, selectedJob:null, draft:{}, importRows:[], importJob:null, archivedEvidence:[], configDraft:[], periodJobIds:[], verifyJobFilter:"ALL"};
+const state = {profile:null, jobs:[], units:[], up3:[], rows:[], page:'dashboard', job:null, periodMonth:new Date().getMonth()+1, periodYear:new Date().getFullYear(), selectedUp3:null, selectedJob:null, draft:{}, importRows:[], importJob:null, archivedEvidence:[], configDraft:[], periodJobIds:[], hiddenPeriodJobIds:[], verifyJobFilter:"ALL"};
 const MONTHS=['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];
 const EVIDENCE_BUCKET='billing-evidence';
 const STATUS={OPEN:'Belum Dikerjakan',PENDING:'Menunggu Verifikasi',APPROVED:'Diterima',REJECTED:'Ditolak / Revisi'};
@@ -135,15 +135,16 @@ async function loadMaster(){
 async function fetchRows(){
  const [rows,memberships]=await Promise.all([
    listAll('billing_targets',q=>periodFilter(q)),
-   sb.from('billing_job_periods').select('job_id').eq('period_year',state.periodYear).eq('period_month',state.periodMonth)
+   sb.from('billing_job_periods').select('job_id,is_hidden').eq('period_year',state.periodYear).eq('period_month',state.periodMonth)
  ]);
  if(memberships.error)throw new Error('Daftar pekerjaan bulanan: '+memberships.error.message);
- state.rows=rows;state.periodJobIds=(memberships.data||[]).map(x=>x.job_id);
+ state.rows=rows;state.periodJobIds=(memberships.data||[]).filter(x=>!x.is_hidden).map(x=>x.job_id);state.hiddenPeriodJobIds=(memberships.data||[]).filter(x=>x.is_hidden).map(x=>x.job_id);
  await loadArchives();
 }
 function currentJobs(){
  const ids=new Set([...(state.periodJobIds||[]),...state.rows.map(r=>r.job_id)]);
- return state.jobs.filter(j=>j.active&&ids.has(j.id));
+ const hidden=new Set(state.hiddenPeriodJobIds||[]);
+ return state.jobs.filter(j=>j.active&&ids.has(j.id)&&!hidden.has(j.id));
 }
 
 async function loadContext(){
@@ -215,7 +216,8 @@ function dashboardMatrix(){
 function renderDashboard(){
  const entityLabel=isAdmin()?'Seluruh UP3':isUP3()?up3Label(state.profile.up3_code):unitLabel(state.profile.ulp_code);
  const jobs=currentJobs();
- const allStats=groupStats(state.rows);
+ const visibleJobIds=new Set(jobs.map(j=>j.id));
+ const allStats=groupStats(state.rows.filter(r=>visibleJobIds.has(r.job_id)));
  const jobCards=jobs.length?jobs.map((job,i)=>{
   const s=groupStats(state.rows.filter(r=>r.job_id===job.id));
   const tone=s.pct>=100?'#13855c':s.pct>=60?'#b7791f':s.approved>0?'#285bb6':'#64748b';
@@ -256,7 +258,7 @@ function renderPekerjaan(){
  document.querySelectorAll('[data-openjob]').forEach(e=>e.onclick=()=>showPage('detail',{job:e.dataset.openjob}));
 }
 function renderDetail(){
- const job=jobBy(state.job);if(!job){showPage('pekerjaan');return}
+ const job=jobBy(state.job);if(!job||!currentJobs().some(j=>j.id===state.job)){showPage('pekerjaan');return}
  const cols1=columns(job,'target_columns'),cols2=columns(job,'report_columns'), fields=fieldConfig(job);
  const all=state.rows.filter(r=>r.job_id===job.id);
  const rows=isULP()?all.filter(r=>r.status==='OPEN'||r.status==='REJECTED'):all;
@@ -346,7 +348,7 @@ function renderUpdate(){if(!isAdmin())return showPage('dashboard');
  document.querySelectorAll('[data-utab]').forEach(b=>b.onclick=()=>{document.querySelectorAll('[data-utab]').forEach(x=>x.classList.toggle('active',x===b));renderUpdateTab(b.dataset.utab)});
  renderUpdateTab('create');
 }
-function renderUpdateTab(tab){const node=$('updatePane');const jobs=tab==='upload'?currentJobs():state.jobs.filter(j=>j.active);
+function renderUpdateTab(tab){const node=$('updatePane');const jobs=currentJobs();
  if(tab==='create'){
  node.innerHTML=`<section class="panel"><h3>Tambah Pekerjaan Baru</h3><div class="panel-sub">Admin menentukan dua bagian template dalam satu pekerjaan. Nama kolom dipisah baris atau koma.</div>
  <form id="newJobForm" class="form-grid" style="margin-top:23px">
@@ -378,10 +380,11 @@ function renderUpdateTab(tab){const node=$('updatePane');const jobs=tab==='uploa
  $('importJob').onchange=()=>importFeedback('Pekerjaan terpilih. Pilih file, lalu klik Upload Target.');
  $('uploadRun').onclick=uploadImport;
  }else{
- node.innerHTML=`<section class="panel"><div class="section-head"><div><h3>Daftar Pekerjaan</h3><div class="panel-sub">Kelola pekerjaan dan download template target per judul. Hapus pekerjaan akan menghapus seluruh target dan laporan terkait.</div></div></div><div class="table-scroll"><table class="data-table"><thead><tr><th>Judul</th><th>Template Target</th><th>Template Realisasi</th><th>Aksi</th></tr></thead><tbody>${jobs.map(j=>`<tr><td><b>${esc(j.title)}</b></td><td>${esc(columns(j,'target_columns').join(', '))}</td><td>${esc(columns(j,'report_columns').join(', '))}</td><td><div class="toolbar"><button class="btn" data-templatejob="${j.id}">↓ Template</button><button class="btn" data-configjob="${j.id}">⚙ Realisasi</button><button class="btn danger" data-deletejob="${j.id}">✕ Hapus</button></div></td></tr>`).join('')||'<tr><td colspan="4">Belum ada pekerjaan.</td></tr>'}</tbody></table></div></section>`;
+ node.innerHTML=`<section class="panel"><div class="section-head"><div><h3>Daftar Pekerjaan</h3><div class="panel-sub">Kelola pekerjaan periode ${esc(period())}. Hapus hanya menyembunyikan judul di bulan terpilih. Data dan histori tetap aman.</div></div></div><div class="table-scroll"><table class="data-table"><thead><tr><th>Judul</th><th>Template Target</th><th>Template Realisasi</th><th>Aksi</th></tr></thead><tbody>${jobs.map(j=>`<tr><td><b>${esc(j.title)}</b></td><td>${esc(columns(j,'target_columns').join(', '))}</td><td>${esc(columns(j,'report_columns').join(', '))}</td><td><div class="toolbar"><button class="btn" data-templatejob="${j.id}">↓ Template</button><button class="btn" data-configjob="${j.id}">⚙ Realisasi</button><button class="btn danger" data-deletejob="${j.id}">✕ Hapus Bulan Ini</button></div></td></tr>`).join('')||'<tr><td colspan="4">Belum ada pekerjaan.</td></tr>'}</tbody></table></div><div id="hiddenJobPanel" style="margin-top:22px"></div></section>`;
  document.querySelectorAll('[data-templatejob]').forEach(btn=>btn.onclick=()=>downloadTemplateForJob(btn.dataset.templatejob));
  document.querySelectorAll('[data-configjob]').forEach(btn=>btn.onclick=()=>editJobConfig(btn.dataset.configjob));
  document.querySelectorAll('[data-deletejob]').forEach(btn=>btn.onclick=()=>deleteJob(btn.dataset.deletejob,btn));
+ renderHiddenPeriodJobs();
  }
 }
 async function loadPreviousJobChoices(year,month){
@@ -392,7 +395,7 @@ async function loadPreviousJobChoices(year,month){
   if(error)throw error;
   if(state.periodYear!==year||state.periodMonth!==month||!holder.isConnected)return;
   const ids=new Set((data||[]).map(x=>x.job_id));
-  const existing=new Set([...(state.periodJobIds||[]),...state.rows.map(r=>r.job_id)]);
+  const existing=new Set(currentJobs().map(j=>j.id));
   const choices=state.jobs.filter(j=>j.active&&ids.has(j.id));
   holder.innerHTML=choices.length?choices.map(j=>`<label style="display:flex;align-items:center;gap:12px;padding:11px 14px;border:1px solid #e1e8f0;border-radius:10px"><input type="checkbox" data-copy-job="${esc(j.id)}" ${existing.has(j.id)?'disabled':''} style="width:18px;height:18px"><span>${esc(j.title)}${existing.has(j.id)?' <small class="muted">(sudah ada di bulan ini)</small>':''}</span></label>`).join(''):'<div class="empty">Tidak ada pekerjaan di bulan sebelumnya.</div>';
   button.disabled=!choices.some(j=>!existing.has(j.id));
@@ -485,19 +488,32 @@ function downloadTemplateForJob(jobId){try{
  XLSX.writeFile(wb,'Template_Target_'+safeFile(job.title)+'.xlsx',{bookType:'xlsx'});
  toast('Template '+job.title+' berhasil diunduh. Isi sheet TARGET, lalu upload kembali.');
  }catch(e){err(e)}}
+function renderHiddenPeriodJobs(){
+ const holder=$('hiddenJobPanel');if(!holder)return;
+ const hidden=state.jobs.filter(j=>j.active&&(state.hiddenPeriodJobIds||[]).includes(j.id));
+ holder.innerHTML=hidden.length?`<h3>Judul Disembunyikan — ${esc(period())}</h3><div class="panel-sub" style="margin-bottom:12px">Hanya periode ini. Data lama tidak dihapus.</div>${hidden.map(j=>`<div class="flex-between" style="padding:10px 0;border-bottom:1px solid #e3e8ee"><span>${esc(j.title)}</span><button class="btn" data-restorejob="${esc(j.id)}">↶ Tampilkan Kembali</button></div>`).join('')}`:'';
+ holder.querySelectorAll('[data-restorejob]').forEach(btn=>btn.onclick=()=>restorePeriodJob(btn.dataset.restorejob,btn));
+}
 async function deleteJob(id,button){
- const job=jobBy(id);if(!job)return toast('Pekerjaan tidak ditemukan.',true);
- const count=await sb.from('billing_targets').select('id',{count:'exact',head:true}).eq('job_id',id);
- if(count.error)return err(count.error);
- const total=count.count||0;
- const detail=total?`PERHATIAN: ${total} baris target dan seluruh realisasinya akan IKUT TERHAPUS secara permanen.`:'Belum ada target yang terkait pekerjaan ini.';
- if(!confirm(`Hapus pekerjaan "${job.title}"?\n\n${detail}\n\nAksi ini tidak bisa dibatalkan.`))return;
- const confirmTitle=prompt(`Ketik judul pekerjaan PERSIS untuk mengonfirmasi penghapusan:\n${job.title}`);
- if(confirmTitle!==job.title)return toast('Penghapusan dibatalkan (judul tidak cocok).',true);
+ const job=jobBy(id);if(!job||!isAdmin())return toast('Pekerjaan tidak ditemukan atau tidak diizinkan.',true);
+ const month=state.periodMonth,year=state.periodYear,periodText=period();
+ const rows=state.rows.filter(r=>r.job_id===id);
+ if(rows.some(r=>r.status==='PENDING'))return toast('Masih ada laporan menunggu verifikasi. Selesaikan verifikasi terlebih dahulu sebelum menyembunyikan pekerjaan.',true);
+ if(!confirm(`Hapus \"${job.title}\" dari daftar ${periodText}?\n\nHANYA judul periode ini yang disembunyikan. Target, realisasi, foto dan histori semua bulan TIDAK dihapus.\n\n${rows.length} target periode ini tetap tersimpan.`))return;
  busy(button,true);
  try{
-  const {error}=await sb.rpc('billing_delete_job',{p_job:id});if(error)throw error;
-  await Promise.all([loadMaster(),fetchRows()]);toast('Pekerjaan berhasil dihapus.');renderUpdateTab('manage');
+  const {error}=await sb.rpc('billing_set_job_period_visibility',{p_job:id,p_year:year,p_month:month,p_hidden:true});
+  if(error)throw error;
+  await fetchRows();toast(`Judul disembunyikan dari ${periodText}. Histori tetap aman.`);renderUpdateTab('manage');
+ }catch(e){err(e)}finally{busy(button,false)}
+}
+async function restorePeriodJob(id,button){
+ const job=jobBy(id);if(!job||!isAdmin())return;
+ busy(button,true);
+ try{
+  const {error}=await sb.rpc('billing_set_job_period_visibility',{p_job:id,p_year:state.periodYear,p_month:state.periodMonth,p_hidden:false});
+  if(error)throw error;
+  await fetchRows();toast(`Pekerjaan ${job.title} tampil kembali di ${period()}.`);renderUpdateTab('manage');
  }catch(e){err(e)}finally{busy(button,false)}
 }
 function safeFile(s){return String(s||'Pekerjaan').replace(/[^a-zA-Z0-9_-]+/g,'_').slice(0,70)}
