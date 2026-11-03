@@ -261,36 +261,72 @@ async function deleteJob(id,button){
 }
 function safeFile(s){return String(s||'Pekerjaan').replace(/[^a-zA-Z0-9_-]+/g,'_').slice(0,70)}
 async function getExcelRows(file){
- const XLSX=requireXLSX(),buf=await file.arrayBuffer(),wb=XLSX.read(buf,{type:'array',raw:false});const sheet=wb.Sheets[wb.SheetNames[0]];
- if(!sheet)throw new Error('File tidak memiliki worksheet');
- const raw=XLSX.utils.sheet_to_json(sheet,{defval:'',raw:false});
- // Header is normalized with whitespace trimmed, values preserved as spreadsheet-formatted strings.
- return raw.map(row=>Object.fromEntries(Object.entries(row).map(([k,v])=>[String(k).trim(),String(v??'').trim()]))).filter(row=>Object.values(row).some(x=>x!==''));
+ const XLSX=requireXLSX(),buf=await file.arrayBuffer(),wb=XLSX.read(buf,{type:'array',raw:false});
+ const sheetName=wb.SheetNames.find(n=>key(n)==='TARGET')||wb.SheetNames[0];
+ const sheet=wb.Sheets[sheetName];if(!sheet)throw new Error('File Excel tidak memiliki sheet TARGET.');
+ const raw=XLSX.utils.sheet_to_json(sheet,{defval:'',raw:false,blankrows:false});
+ if(!raw.length)throw new Error('Sheet TARGET masih kosong. Isi minimal satu baris data di bawah judul kolom, lalu simpan Excel.');
+ return raw.map(row=>Object.fromEntries(Object.entries(row).map(([k,v])=>[String(k).replace(/^\uFEFF/,'').trim(),String(v??'').trim()])))
+   .filter(row=>Object.values(row).some(v=>v!==''));
+}
+function importFeedback(message,isError=false){
+ const out=$('importPreview');if(out)out.innerHTML=`<div style="white-space:normal;line-height:1.65;${isError?'color:#b33b38':''}">${isError?'<b>Preview gagal — target belum di-upload.</b><br>':''}${esc(message)}</div>`;
 }
 async function previewImport(){
- const job=jobBy($('importJob').value),file=$('uploadFile').files?.[0],out=$('importPreview');state.importRows=[];state.importJob=null;
- if(!job||!file){out.textContent='Pilih pekerjaan dan file Excel.';return}
- try{const rows=await getExcelRows(file);if(!rows.length)throw new Error('Excel tidak memiliki baris data');
- const headers=Object.keys(rows[0]);const targetCols=columns(job,'target_columns');const unitHeader=headers.find(x=>key(x)==='UNITUP');
- if(!unitHeader)throw new Error('Kolom UNITUP wajib ada di Excel, untuk menentukan pemilik target ULP.');
- const missing=targetCols.filter(c=>!headers.some(h=>key(h)===key(c)));if(missing.length)throw new Error('Kolom Template 1 tidak ditemukan: '+missing.join(', '));
- const invalid=[...new Set(rows.map(r=>String(r[unitHeader]).trim()).filter(c=>!state.units.some(u=>u.code===c)))];
- if(invalid.length)throw new Error('Kode UNITUP tidak terdaftar di master billing_ulp: '+invalid.slice(0,20).join(', '));
- const sourceKeyHeader=headers.find(x=>key(x)==='IDPEL')||headers.find(x=>key(x)==='NO METER')||null;
- state.importRows=rows.map((r,i)=>({ulp:String(r[unitHeader]).trim(),key:sourceKeyHeader?String(r[sourceKeyHeader]).trim():String(i+2),data:Object.fromEntries(targetCols.map(c=>[c,r[headers.find(h=>key(h)===key(c))]]))}));state.importJob=job.id;
- if(sourceKeyHeader&&state.importRows.some(r=>!r.key))throw new Error(`Kolom ${sourceKeyHeader} memiliki nilai kosong.`);
- const identities=state.importRows.map(r=>r.ulp+'|'+r.key);if(new Set(identities).size!==identities.length)throw new Error('Ada IDPEL/nomor meter/kunci baris yang duplikat pada UNITUP yang sama.');
- out.innerHTML=`<b>Siap di-upload:</b> ${rows.length} baris dari ${new Set(rows.map(x=>x[unitHeader])).size} ULP, untuk ${esc(job.title)} (${period()}).<br><small>Preview baris pertama: ${esc(JSON.stringify(state.importRows[0].data).slice(0,350))}</small><br><small>Upload ulang dengan kunci baris sama akan memperbarui data target tanpa menghapus realisasi.</small>`;
- }catch(e){out.innerHTML=`<span style="color:#b33b38">${esc(e.message)}</span>`;state.importRows=[];err(e)}
+ state.importRows=[];state.importJob=null;
+ const select=$('importJob'),fileInput=$('uploadFile');
+ const job=jobBy(select?.value),file=fileInput?.files?.[0];
+ if(!job){importFeedback('Pilih judul pekerjaan terlebih dahulu.');return}
+ if(!file){importFeedback('Pilih file Excel yang telah diisi pada sheet TARGET.');return}
+ importFeedback('Sedang membaca file Excel...');
+ try{
+  const rows=await getExcelRows(file);
+  const headers=Object.keys(rows[0]);
+  const targetCols=columns(job,'target_columns');
+  const norm=s=>key(s).replace(/[\s_-]+/g,'');
+  const findHeader=name=>headers.find(h=>norm(h)===norm(name));
+  const unitHeader=findHeader('UNITUP');
+  if(!unitHeader)throw new Error('Kolom UNITUP belum ditemukan pada baris header. Kolom terdeteksi: '+headers.join(', '));
+  const missing=targetCols.filter(c=>!findHeader(c));
+  if(missing.length)throw new Error('Kolom Template 1 belum sesuai: '+missing.join(', ')+'. Kolom terdeteksi: '+headers.join(', '));
+  const ulpCode=c=>String(c??'').trim().replace(/\.0+$/,'');
+  const invalid=[...new Set(rows.map(r=>ulpCode(r[unitHeader])).filter(c=>!state.units.some(u=>String(u.code)===c)))];
+  if(invalid.length)throw new Error('UNITUP yang belum terdaftar di master billing_ulp: '+invalid.join(', ')+'. UNITUP 14460 SAJA BOLEH di-upload tanpa menunggu ULP lain dibuat.');
+  const sourceKeyHeader=findHeader('IDPEL')||findHeader('NO METER')||findHeader('NOMOR METER')||null;
+  const incoming=rows.map((r,i)=>({
+   ulp:ulpCode(r[unitHeader]),
+   key:sourceKeyHeader?String(r[sourceKeyHeader]).trim():String(i+2),
+   data:Object.fromEntries(targetCols.map(c=>[c,r[findHeader(c)]??'']))
+  }));
+  if(sourceKeyHeader&&incoming.some(r=>!r.key))throw new Error(`Kolom ${sourceKeyHeader} ada yang kosong. Isi semua kunci baris.`);
+  const identities=incoming.map(r=>r.ulp+'|'+r.key);
+  if(new Set(identities).size!==identities.length)throw new Error('Ada IDPEL/nomor meter/kunci baris duplikat untuk UNITUP yang sama.');
+  state.importRows=incoming;state.importJob=job.id;
+  const units=[...new Set(incoming.map(r=>r.ulp))].join(', ');
+  const out=$('importPreview');
+  out.innerHTML=`<b style="color:#13855c">✓ Preview berhasil — siap upload</b><br>${incoming.length} baris target · UNITUP: <b>${esc(units)}</b> · ${esc(job.title)} · ${period()}<br><small>Contoh data: ${esc(JSON.stringify(incoming[0].data).slice(0,350))}</small>`;
+ }catch(e){state.importRows=[];state.importJob=null;importFeedback(e.message,true);console.error('Preview upload BILLINGS2JB:',e);}
 }
 async function uploadImport(){
- const btn=$('uploadRun');if(!state.importRows.length||state.importJob!==$('importJob').value)return toast('Pilih file dan pastikan preview berhasil.',true);
+ const btn=$('uploadRun');
+ if(!state.importRows.length||state.importJob!==$('importJob')?.value){
+  const file=$('uploadFile')?.files?.[0];
+  if(file&&$('importJob')?.value)await previewImport();
+  if(!state.importRows.length||state.importJob!==$('importJob')?.value){
+   toast('Preview belum berhasil. Baca alasan berwarna merah di bawah tombol Upload Target.',true);return;
+  }
+ }
  if(!confirm(`Upload ${state.importRows.length} target untuk ${period()}?`))return;
  busy(btn,true);let successful=0;
  try{
-  for(const r of state.importRows){const {error}=await sb.rpc('billing_import_target',{p_job:state.importJob,p_year:state.periodYear,p_month:state.periodMonth,p_ulp:r.ulp,p_key:r.key,p_data:r.data});if(error)throw new Error(`Baris ${successful+1}, ULP ${r.ulp}: ${error.message}`);successful++;}
-  toast(`Berhasil: ${successful} target disimpan untuk ${period()}.`);state.importRows=[];await refresh(false);renderUpdateTab('upload');
- }catch(e){err(new Error(`${successful} baris berhasil sebelum proses berhenti. ${e.message}`))}finally{busy(btn,false)}
+  for(const r of state.importRows){
+   const {error}=await sb.rpc('billing_import_target',{p_job:state.importJob,p_year:state.periodYear,p_month:state.periodMonth,p_ulp:r.ulp,p_key:r.key,p_data:r.data});
+   if(error)throw new Error(`Baris ${successful+1}, UNITUP ${r.ulp}: ${error.message}`);
+   successful++;
+  }
+  toast(`Berhasil: ${successful} target disimpan untuk ${period()}.`);
+  await refresh(false);renderUpdateTab('upload');
+ }catch(e){importFeedback(`${successful} baris sudah berhasil, proses berhenti: ${e.message}`,true);err(e)}finally{busy(btn,false)}
 }
 function renderVerify(){if(!isAdmin())return showPage('dashboard');
  const rows=state.rows.filter(r=>r.status==='PENDING').sort((a,b)=>new Date(a.submitted_at)-new Date(b.submitted_at));
