@@ -221,7 +221,7 @@ function renderDashboard(){
  const fmt=n=>Number(n).toLocaleString('id-ID');
  const jobCards=jobs.length?jobs.map((job,i)=>{
   const rows=state.rows.filter(r=>r.job_id===job.id),s=groupStats(rows);
-  const unstarted=Math.max(0,s.total-s.approved-s.pending-s.rejected);
+  const unstarted=Math.max(0,s.total-s.approved-s.pending);
   const radius=43,circ=2*Math.PI*radius;
   // Donut menunjukkan realisasi disetujui terhadap target, bukan komposisi status.
   // Rumus 'Belum' dan tooltip ULP terendah tetap dipertahankan.
