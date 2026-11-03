@@ -173,7 +173,7 @@ async function loadContext(){
  }
 }
 function renderNav(){
- const nav=[['dashboard','▦','Dashboard'],['pekerjaan','▤','Pekerjaan']];
+ const nav=[['dashboard','◫','Dashboard'],['pekerjaan','▤','Pekerjaan']];
  if(isAdmin())nav.push(['update','⇧','Update Pekerjaan']);
  $('nav').innerHTML=nav.map(([id,ico,label])=>`<button class="nav-item" data-page="${id}"><span class="nav-ico">${ico}</span>${label}</button>`).join('');
  document.querySelectorAll('[data-page]').forEach(b=>b.onclick=()=>showPage(b.dataset.page));
@@ -218,27 +218,28 @@ function renderDashboard(){
  const jobs=currentJobs();
  const visibleJobIds=new Set(jobs.map(j=>j.id));
  const allStats=groupStats(state.rows.filter(r=>visibleJobIds.has(r.job_id)));
+ const fmt=n=>Number(n).toLocaleString('id-ID');
  const jobCards=jobs.length?jobs.map((job,i)=>{
-  const s=groupStats(state.rows.filter(r=>r.job_id===job.id));
-  const tone=s.pct>=100?'#13855c':s.pct>=60?'#b7791f':s.approved>0?'#285bb6':'#64748b';
-  const tint=s.pct>=100?'#e7f8ef':s.pct>=60?'#fff7e7':s.approved>0?'#edf4ff':'#f1f5f9';
-  return `<div class="job-card" style="cursor:default;min-height:0;padding:18px;border-color:#e1e8f2">
-   <div class="flex-between" style="align-items:flex-start">
-    <div class="num">PEKERJAAN ${String(i+1).padStart(2,'0')}</div>
-    <div style="background:${tint};color:${tone};border-radius:999px;font-size:12px;font-weight:800;padding:5px 10px">${s.pct}%</div>
-   </div>
-   <b style="margin:12px 0 16px;min-height:38px">${esc(job.title)}</b>
-   <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-bottom:14px">
-    <div><span class="small muted">Target</span><strong style="display:block;font-size:20px;color:#233451">${s.total.toLocaleString('id-ID')}</strong></div>
-    <div><span class="small muted">Realisasi</span><strong style="display:block;font-size:20px;color:#13855c">${s.approved.toLocaleString('id-ID')}</strong></div>
-    <div><span class="small muted">Menunggu</span><strong style="display:block;font-size:20px;color:#b7791f">${s.pending.toLocaleString('id-ID')}</strong></div>
-   </div>
-   <div style="height:8px;width:100%;border-radius:999px;background:#edf1f5;overflow:hidden"><div style="height:100%;width:${Math.min(100,s.pct)}%;background:${tone};border-radius:999px"></div></div>
-   </div>`;
- }).join(''):'<div class="empty" style="grid-column:1/-1">Belum ada pekerjaan aktif pada sistem.</div>';
- h(`<div class="section-head"><div><h3>Ringkasan Realisasi per Pekerjaan</h3><div class="panel-sub">${esc(entityLabel)} · ${period()} · Hanya hasil yang disetujui Admin dihitung sebagai realisasi.</div></div><button class="btn" id="refreshDashboard">↻ Refresh</button></div>
- ${isAdmin()?`<button type="button" class="panel" id="goVerifyDashboard" style="width:100%;display:flex;align-items:center;justify-content:space-between;gap:12px;text-align:left;cursor:pointer;padding:15px 20px;border-color:#f0d99c;background:#fffaf0" title="Buka Verifikasi Pekerjaan"><div><span style="display:block;color:#926417;font-weight:700">Menunggu Verifikasi · Semua Pekerjaan</span><small style="color:#926417">Klik untuk memeriksa laporan dari ULP</small></div><strong style="font-size:26px;color:#9a6714">${allStats.pending.toLocaleString('id-ID')} ↗</strong></button>`:''}
- <div class="job-list" style="margin-bottom:22px">${jobCards}</div>
+  const rows=state.rows.filter(r=>r.job_id===job.id),s=groupStats(rows);
+  const unstarted=Math.max(0,s.total-s.approved-s.pending-s.rejected);
+  const radius=43,circ=2*Math.PI*radius;
+  const parts=[{key:'approved',name:'Diterima',count:s.approved,color:'#70DCC1'},{key:'pending',name:'Menunggu',count:s.pending,color:'#F5D98C'},{key:'rejected',name:'Ditolak',count:s.rejected,color:'#E59C94'},{key:'unstarted',name:'Belum',count:unstarted,color:'#8093A8'}];
+  let offset=0;
+  const arcs=parts.map(part=>{const len=s.total?part.count/s.total*circ:0;const arc=len>0?`<circle cx="60" cy="60" r="${radius}" fill="none" stroke="${part.color}" stroke-width="14" stroke-dasharray="${Math.max(0,len-.5)} ${circ}" stroke-dashoffset="${-offset}" transform="rotate(-90 60 60)"/>`:'';offset+=len;return arc}).join('');
+  const rankingUnits=isAdmin()?state.up3.map(u=>({code:u.code,name:u.name,rows:rows.filter(r=>up3For(r.ulp_code)===u.code)})):isUP3()?state.units.filter(u=>u.up3_code===state.profile.up3_code).map(u=>({code:u.code,name:u.name,rows:rows.filter(r=>r.ulp_code===u.code)})):[{code:state.profile.ulp_code,name:unitLabel(state.profile.ulp_code),rows}];
+  const ranking=rankingUnits.map(u=>({...u,stats:groupStats(u.rows)})).filter(u=>u.stats.total>0).sort((a,b)=>b.stats.pct-a.stats.pct);
+  const lowest=state.units.filter(u=>isAdmin()||isUP3()&&u.up3_code===state.profile.up3_code||!isAdmin()&&!isUP3()&&u.code===state.profile.ulp_code).map(u=>({...u,stats:groupStats(rows.filter(r=>r.ulp_code===u.code))})).filter(u=>u.stats.total>0).sort((a,b)=>a.stats.pct-b.stats.pct||a.code.localeCompare(b.code)).slice(0,5);
+  const tooltip=lowest.length?lowest.map((u,n)=>`<div class="low-row"><span>${n+1}. ${esc(u.name||u.code)}</span><b>${u.stats.pct}%</b></div>`).join(''):'<div class="low-row">Belum ada target ULP</div>';
+  return `<article class="job-overview">
+   <div class="job-overview-head"><div><div class="num">PEKERJAAN ${String(i+1).padStart(2,'0')}</div><h4>${esc(job.title)}</h4></div><span class="job-target">Target <b>${fmt(s.total)}</b></span></div>
+   <div class="job-visuals"><div class="job-donut-section"><div class="donut-and-status"><div class="donut-chart"><svg viewBox="0 0 120 120" role="img" aria-label="Capaian ${s.pct}%"><circle cx="60" cy="60" r="43" fill="none" stroke="#435469" stroke-width="14"/>${arcs}<text x="60" y="57" text-anchor="middle" fill="#F1F5F9" font-size="23" font-weight="750">${s.pct}%</text><text x="60" y="72" text-anchor="middle" fill="#A9BACB" font-size="9">CAPAIAN</text></svg></div>
+   <div class="donut-legend">${parts.map(part=>`<div class="legend-item ${part.key==='unstarted'?'legend-hover':''}" ${part.key==='unstarted'?'tabindex="0" aria-label="Lihat ULP dengan realisasi terendah"':''}><span class="legend-dot" style="background:${part.color}"></span><span class="legend-label">${part.name}</span><strong>${fmt(part.count)}</strong>${part.key==='unstarted'?`<div class="low-tooltip"><div class="low-tooltip-title">ULP Realisasi Terendah</div><small>Khusus ${esc(job.title)}</small>${tooltip}</div>`:''}</div>`).join('')}</div></div></div>
+   <div class="job-ranking"><div class="ranking-title">${isAdmin()?'Ranking UP3':'Ranking ULP'} <small>Berdasarkan capaian</small></div><div class="ranking-bars">${ranking.length?ranking.map(u=>`<div class="rank-row"><div class="rank-line"><span title="${esc(u.name)}">${esc(u.name||u.code)}</span><b>${u.stats.pct}%</b></div><div class="rank-track"><i style="width:${Math.min(100,u.stats.pct)}%"></i></div></div>`).join(''):'<div class="ranking-empty">Belum ada target pada periode ini.</div>'}</div></div></div>
+  </article>`;
+ }).join(''):'<div class="empty">Belum ada pekerjaan aktif pada sistem.</div>';
+ h(`<div class="section-head"><div><h3>Ringkasan Realisasi per Pekerjaan</h3><div class="panel-sub">${esc(entityLabel)} · ${period()} · Hanya hasil disetujui Admin dihitung sebagai realisasi.</div></div><button class="btn" id="refreshDashboard">↻ Refresh</button></div>
+ ${isAdmin()?`<button type="button" class="panel verification-banner" id="goVerifyDashboard" title="Buka Verifikasi Pekerjaan"><div><b>Menunggu Verifikasi · Semua Pekerjaan</b><small>Klik untuk memeriksa laporan dari ULP</small></div><strong>${fmt(allStats.pending)} ↗</strong></button>`:''}
+ <div class="overview-list">${jobCards}</div>
  <section class="panel"><div class="section-head"><div><h3>${isAdmin()?'Realisasi per UP3 & Pekerjaan':isUP3()?'Realisasi per ULP & Pekerjaan':'Realisasi Pekerjaan ULP'}</h3><div class="panel-sub">Klik angka untuk melihat rincian.</div></div></div>${dashboardMatrix()}<div id="drillDown"></div></section>`);
  $('refreshDashboard').onclick=refresh;
  if(isAdmin()&&$('goVerifyDashboard'))$('goVerifyDashboard').onclick=()=>showPage('verify');
