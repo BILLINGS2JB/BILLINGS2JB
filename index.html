@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>BILLINGS2JB | Monitoring Pekerjaan</title>
+<link rel="stylesheet" href="styles.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+<script src="app.js" defer></script>
+</head>
+<body>
+<div id="toast" class="toast hidden"></div>
+<section id="login" class="login-screen">
+  <div class="login-card">
+    <div class="logo-large">B<span>2</span></div><div class="eyebrow">MONITORING & PELAPORAN BILLING</div>
+    <h1>BILLINGS2JB</h1><p>Masuk untuk mengakses pekerjaan dan realisasi unit.</p>
+    <form id="loginForm"><label>Username atau Email<input id="loginUser" required placeholder="Contoh: 14S2JB" autocomplete="username"></label>
+    <label>Password<input id="loginPass" type="password" required placeholder="Password" autocomplete="current-password"></label>
+    <button class="primary full" type="submit" id="loginButton">Masuk</button></form>
+    <div class="login-note">Uji coba: 14S2JB · 14MBO · 14460</div>
+  </div>
+</section>
+<div id="app" class="app hidden">
+<aside class="sidebar">
+ <div class="brand"><div class="logo">B<span>2</span></div><div><b>BILLINGS2JB</b><small>Monitoring Billing</small></div></div>
+ <nav id="nav"></nav>
+ <div class="side-bottom"><div class="avatar" id="sideInitial">U</div><div class="side-user"><b id="sideUsername">-</b><small id="sideRole">-</small></div><button id="logout" class="icon-button" title="Keluar">↪</button></div>
+</aside>
+<main class="main">
+ <header class="topbar"><button id="menuBtn" class="icon-button mobile-only">☰</button><div><h2 id="pageTitle">Dashboard</h2><div class="muted" id="pageSubtitle">Monitoring pekerjaan</div></div><div class="top-actions"><label>Bulan<select id="month"></select></label><label>Tahun<select id="year"></select></label></div></header>
+ <div id="mainContent" class="content"></div>
+</main>
+</div>
+</body></html>
