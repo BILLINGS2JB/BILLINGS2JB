@@ -200,9 +200,30 @@ function dashboardMatrix(){
  }return html+'</tbody></table></div>';
 }
 function renderDashboard(){
- const stats=groupStats(state.rows);const entityLabel=isAdmin()?'Seluruh UP3':isUP3()?up3Label(state.profile.up3_code):unitLabel(state.profile.ulp_code);
- h(`<div class="section-head"><div><h3>Ringkasan Realisasi</h3><div class="panel-sub">${esc(entityLabel)} · ${period()} · Hanya hasil yang disetujui Admin dihitung sebagai realisasi.</div></div><button class="btn" id="refreshDashboard">↻ Refresh</button></div>
- <div class="grid stats">${statCard('Total Target',stats.total,'Seluruh baris target')}${statCard('Realisasi Disetujui',stats.approved,'Lolos verifikasi')}${statCard('Menunggu Verifikasi',stats.pending,'Sedang diperiksa Admin',isAdmin())}${statCard('Capaian',stats.pct+'%','Disetujui / Target')}</div>
+ const entityLabel=isAdmin()?'Seluruh UP3':isUP3()?up3Label(state.profile.up3_code):unitLabel(state.profile.ulp_code);
+ const jobs=state.jobs.filter(j=>j.active);
+ const allStats=groupStats(state.rows);
+ const jobCards=jobs.length?jobs.map((job,i)=>{
+  const s=groupStats(state.rows.filter(r=>r.job_id===job.id));
+  const tone=s.pct>=100?'#13855c':s.pct>=60?'#b7791f':s.approved>0?'#285bb6':'#64748b';
+  const tint=s.pct>=100?'#e7f8ef':s.pct>=60?'#fff7e7':s.approved>0?'#edf4ff':'#f1f5f9';
+  return `<div class="job-card" style="cursor:default;min-height:0;padding:18px;border-color:#e1e8f2">
+   <div class="flex-between" style="align-items:flex-start">
+    <div class="num">PEKERJAAN ${String(i+1).padStart(2,'0')}</div>
+    <div style="background:${tint};color:${tone};border-radius:999px;font-size:12px;font-weight:800;padding:5px 10px">${s.pct}%</div>
+   </div>
+   <b style="margin:12px 0 16px;min-height:38px">${esc(job.title)}</b>
+   <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-bottom:14px">
+    <div><span class="small muted">Target</span><strong style="display:block;font-size:20px;color:#233451">${s.total.toLocaleString('id-ID')}</strong></div>
+    <div><span class="small muted">Realisasi</span><strong style="display:block;font-size:20px;color:#13855c">${s.approved.toLocaleString('id-ID')}</strong></div>
+    <div><span class="small muted">Menunggu</span><strong style="display:block;font-size:20px;color:#b7791f">${s.pending.toLocaleString('id-ID')}</strong></div>
+   </div>
+   <div style="height:8px;width:100%;border-radius:999px;background:#edf1f5;overflow:hidden"><div style="height:100%;width:${Math.min(100,s.pct)}%;background:${tone};border-radius:999px"></div></div>
+   </div>`;
+ }).join(''):'<div class="empty" style="grid-column:1/-1">Belum ada pekerjaan aktif pada sistem.</div>';
+ h(`<div class="section-head"><div><h3>Ringkasan Realisasi per Pekerjaan</h3><div class="panel-sub">${esc(entityLabel)} · ${period()} · Hanya hasil yang disetujui Admin dihitung sebagai realisasi.</div></div><button class="btn" id="refreshDashboard">↻ Refresh</button></div>
+ ${isAdmin()?`<button type="button" class="panel" id="goVerifyDashboard" style="width:100%;display:flex;align-items:center;justify-content:space-between;gap:12px;text-align:left;cursor:pointer;padding:15px 20px;border-color:#f0d99c;background:#fffaf0" title="Buka Verifikasi Pekerjaan"><div><span style="display:block;color:#926417;font-weight:700">Menunggu Verifikasi · Semua Pekerjaan</span><small style="color:#926417">Klik untuk memeriksa laporan dari ULP</small></div><strong style="font-size:26px;color:#9a6714">${allStats.pending.toLocaleString('id-ID')} ↗</strong></button>`:''}
+ <div class="job-list" style="margin-bottom:22px">${jobCards}</div>
  <section class="panel"><div class="section-head"><div><h3>${isAdmin()?'Realisasi per UP3 & Pekerjaan':isUP3()?'Realisasi per ULP & Pekerjaan':'Realisasi Pekerjaan ULP'}</h3><div class="panel-sub">Klik angka untuk melihat rincian.</div></div></div>${dashboardMatrix()}<div id="drillDown"></div></section>`);
  $('refreshDashboard').onclick=refresh;
  if(isAdmin()&&$('goVerifyDashboard'))$('goVerifyDashboard').onclick=()=>showPage('verify');
