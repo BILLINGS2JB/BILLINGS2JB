@@ -1,4 +1,4 @@
-* BILLINGS2JB | Pilot 3 akun + perluasan semua unit */
+/* BILLINGS2JB | Pilot 3 akun + perluasan semua unit */
 'use strict';
 const SUPABASE_URL = 'https://clobqngkrlpoiwdpezyg.supabase.co';
 const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_jx5V7hD-cf8tXChzbN4grg_bIpcVfVo';
@@ -12,7 +12,7 @@ const STATUS={OPEN:'Belum Dikerjakan',PENDING:'Menunggu Verifikasi',APPROVED:'Di
 const esc = x => String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const key = s => String(s??'').trim().toUpperCase();
 const el = (tag,attrs,children) => {const a=document.createElement(tag);Object.entries(attrs||{}).forEach(([k,v])=>{if(k==='text')a.textContent=v;else if(k==='class')a.className=v;else if(k==='value')a.value=v;else a.setAttribute(k,v)});if(children)a.append(...children);return a};
-const toast=(message,error=false)=>{const t=$('toast');t.textContent=message;t.className='toast'+(error?' error':'');clearTimeout(window._toastTimer);window._toastTimer=setTimeout(()=>t.classList.add('hidden'),5500)};
+const toast=(message,error=false)=>{const t=$('toast');t.textContent=message;t.className='toast'+(error?' error':'');clearTimeout(window._toastTimer);window._toastTimer=setTimeout(()=>t.classList.add('hidden'),error?16000:5500)};
 const err=e=>toast(e?.message||String(e),true);
 function busy(button,on=true){if(button){button.disabled=on;button.dataset.original ||= button.textContent;button.textContent=on?'Memproses...':button.dataset.original;}}
 function h(html){$('mainContent').innerHTML=html;}
@@ -381,17 +381,31 @@ function exportJob(job){try{
  }catch(e){err(e)}
 }
 async function refresh(rebuild=true){try{await Promise.all([loadMaster(),fetchRows()]);if(rebuild)showPage(state.page);else showPage(state.page,{job:state.job});}catch(e){err(e)}}
-async function login(ev){ev.preventDefault();const btn=$('loginButton');busy(btn,true);
- const username=$('loginUser').value.trim();const email=username.includes('@')?username:username.toLowerCase()+'@gmail.com';
- try{const {error}=await sb.auth.signInWithPassword({email,password:$('loginPass').value});if(error)throw error;await loadContext();toast('Berhasil masuk ke BILLINGS2JB.');}
- catch(e){err(e);await sb.auth.signOut().catch(()=>{})}finally{busy(btn,false)}
+async function login(ev){
+ ev.preventDefault();
+ const btn=$('loginButton');busy(btn,true);
+ const username=$('loginUser').value.trim();
+ const email=username.includes('@')?username:username.toLowerCase()+'@gmail.com';
+ try{
+  const {error}=await sb.auth.signInWithPassword({email,password:$('loginPass').value});
+  if(error)throw new Error('Autentikasi gagal: '+error.message);
+  try{
+   await loadContext();
+   toast('Berhasil masuk ke BILLINGS2JB.');
+  }catch(contextError){
+   console.error('Autentikasi berhasil, tetapi gagal membuka aplikasi:',contextError);
+   toast('Login Auth BERHASIL, tetapi gagal memuat data: '+contextError.message,true);
+   // Jangan signOut: masalahnya ada pada data/RLS, bukan password.
+  }
+ }catch(e){console.error('Login BILLINGS2JB:',e);err(e)}
+ finally{busy(btn,false)}
 }
 async function logout(){if(!confirm('Keluar dari BILLINGS2JB?'))return;await sb.auth.signOut();state.profile=null;state.draft={};$('app').classList.add('hidden');$('login').classList.remove('hidden');$('loginPass').value='';}
 function setupPeriod(){const m=$('month'),y=$('year');m.innerHTML=MONTHS.map((n,i)=>`<option value="${i+1}">${n}</option>`).join('');const current=new Date().getFullYear();y.innerHTML=Array.from({length:12},(_,i)=>current-4+i).map(v=>`<option value="${v}">${v}</option>`).join('');m.value=state.periodMonth;y.value=state.periodYear;
  const change=async()=>{state.periodMonth=Number(m.value);state.periodYear=Number(y.value);state.draft={};await refresh()};m.onchange=change;y.onchange=change;
 }
 async function init(){setupPeriod();$('loginForm').onsubmit=login;$('logout').onclick=logout;$('menuBtn').onclick=()=>document.querySelector('.sidebar').classList.toggle('show');
- const {data:{session}}=await sb.auth.getSession();if(session){try{await loadContext()}catch(e){err(e);await sb.auth.signOut()}}
+ const {data:{session}}=await sb.auth.getSession();if(session){try{await loadContext()}catch(e){console.error('Gagal memulihkan sesi:',e);toast('Sesi login ada, tetapi data aplikasi gagal dimuat: '+e.message,true)}}
  // Pembaruan berkala hanya pada halaman monitoring, agar draf input ULP tidak terganggu.
  setInterval(async()=>{if(!state.profile||!['dashboard','verify','pekerjaan'].includes(state.page))return;try{await Promise.all([loadMaster(),fetchRows()]);showPage(state.page)}catch(e){console.warn('Auto-refresh:',e.message)}},30000);
 }
