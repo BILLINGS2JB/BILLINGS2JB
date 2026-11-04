@@ -827,11 +827,19 @@ function setupPeriod(){const m=$('month'),y=$('year');m.innerHTML=MONTHS.map((n,
  const change=async()=>{state.periodMonth=Number(m.value);state.periodYear=Number(y.value);state.draft={};await refresh()};m.onchange=change;y.onchange=change;
 }
 async function init(){setupPeriod();$('loginForm').onsubmit=login;$('logout').onclick=logout;$('menuBtn').onclick=()=>document.querySelector('.sidebar').classList.toggle('show');
- const {data:{session}}=await sb.auth.getSession();if(session){try{await loadContext()}catch(e){console.error('Gagal memulihkan sesi:',e);loginError('Sesi Auth ada, tetapi profil gagal dimuat: '+e.message)}}
+ // Jangan tampilkan form login sebelum pemeriksaan sesi selesai.
+ try {
+  const {data:{session},error:sessionError}=await sb.auth.getSession();
+  if(sessionError)throw sessionError;
+  if(session){
+   try{await loadContext()}
+   catch(e){console.error('Gagal memulihkan sesi:',e);loginError('Sesi Auth ada, tetapi profil gagal dimuat: '+e.message);$('login').classList.remove('hidden')}
+  }else{$('login').classList.remove('hidden')}
+ }catch(e){console.error('Pemeriksaan sesi gagal:',e);loginError('Gagal memeriksa sesi: '+e.message);$('login').classList.remove('hidden')}
  // Pembaruan berkala hanya pada halaman monitoring, agar draf input ULP tidak terganggu.
  setInterval(async()=>{if(!state.profile||!['dashboard','verify','pekerjaan'].includes(state.page))return;try{await Promise.all([loadMaster(),fetchRows()]);showPage(state.page)}catch(e){console.warn('Auto-refresh:',e.message)}},30000);
 }
-init().catch(err);
+init().catch(e=>{console.error('Inisialisasi BILLINGS2JB:',e);$('login').classList.remove('hidden');err(e)});
 
 /* Aurora Glass pointer reflection; visual only */
 document.addEventListener('pointermove',event=>{
