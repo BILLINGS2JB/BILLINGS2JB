@@ -173,16 +173,29 @@ async function loadContext(){
  }
 }
 function renderNav(){
- const nav=[['dashboard','◫','Dashboard'],['pekerjaan','▤','Pekerjaan']];
- if(isAdmin())nav.push(['update','⇧','Update Pekerjaan']);
- $('nav').innerHTML=nav.map(([id,ico,label])=>`<button class="nav-item" data-page="${id}"><span class="nav-ico">${ico}</span>${label}</button>`).join('');
+ const admin=isAdmin();
+ $('nav').innerHTML=`
+  <button class="nav-item" data-page="dashboard"><span class="nav-ico">◫</span>Dashboard</button>
+  <button type="button" class="nav-item nav-parent" id="navPekerjaan" aria-expanded="false"><span class="nav-ico">▤</span>Pekerjaan<span class="nav-chevron">⌄</span></button>
+  <div class="nav-submenu" id="navPekerjaanSub" hidden>
+   <button class="nav-item nav-subitem" data-page="pekerjaan">Daftar Pekerjaan</button>
+   ${admin?'<button class="nav-item nav-subitem" data-page="update">Update Pekerjaan</button>':''}
+  </div>
+  <a class="nav-item" href="prabilling.html"><span class="nav-ico">◷</span>Pra Billing</a>
+  <a class="nav-item" href="pascabilling.html"><span class="nav-ico">▣</span>Pasca Billing</a>`;
+ const parent=$('navPekerjaan'), sub=$('navPekerjaanSub');
+ parent.onclick=()=>{const opening=sub.hidden;sub.hidden=!opening;parent.setAttribute('aria-expanded',String(opening));parent.classList.toggle('expanded',opening)};
  document.querySelectorAll('[data-page]').forEach(b=>b.onclick=()=>showPage(b.dataset.page));
 }
 function showPage(page,params={}){
  state.page=page;
  if('job' in params)state.job=params.job;
  if(page==='dashboard')state.selectedUp3=null,state.selectedJob=null;
- document.querySelectorAll('.nav-item').forEach(b=>b.classList.toggle('active',b.dataset.page===page));
+ document.querySelectorAll('.nav-item[data-page]').forEach(b=>b.classList.toggle('active',b.dataset.page===page));
+ if(page==='pekerjaan'||page==='update'||page==='detail'){
+  const sub=$('navPekerjaanSub'),parent=$('navPekerjaan');
+  if(sub&&parent){sub.hidden=false;parent.setAttribute('aria-expanded','true');parent.classList.add('expanded')}
+ }
  const titles={dashboard:'Dashboard',pekerjaan:'Pekerjaan',detail:'Detail Pekerjaan',update:'Update Pekerjaan',verify:'Verifikasi Pekerjaan'};
  $('pageTitle').textContent=titles[page]||'BILLINGS2JB';$('pageSubtitle').textContent=period();
  $('month').value=String(state.periodMonth);$('year').value=String(state.periodYear);
