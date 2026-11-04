@@ -9,6 +9,9 @@ const $ = id => document.getElementById(id);
 const state = {profile:null, jobs:[], units:[], up3:[], rows:[], page:'dashboard', job:null, periodMonth:new Date().getMonth()+1, periodYear:new Date().getFullYear(), selectedUp3:null, selectedJob:null, draft:{}, importRows:[], importJob:null, archivedEvidence:[], configDraft:[], periodJobIds:[], hiddenPeriodJobIds:[], verifyJobFilter:"ALL",detailSearch:"",detailFilter:"ALL"};
 const MONTHS=['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];
 const EVIDENCE_BUCKET='billing-evidence';
+// Category pages load a tiny route-specific file; the shared billing engine stays in app.js.
+const BILLING_CATEGORY=window.BILLING_PAGE_CATEGORY||null;
+const billingCategoryName=c=>c==='PRA'?'Pra Billing':c==='PASCA'?'Pasca Billing':'Dashboard';
 const STATUS={OPEN:'Belum Dikerjakan',PENDING:'Menunggu Verifikasi',APPROVED:'Diterima',REJECTED:'Ditolak / Revisi'};
 const esc = x => String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const key = s => String(s??'').trim().toUpperCase();
@@ -147,7 +150,7 @@ async function fetchRows(){
 function currentJobs(){
  const ids=new Set([...(state.periodJobIds||[]),...state.rows.map(r=>r.job_id)]);
  const hidden=new Set(state.hiddenPeriodJobIds||[]);
- return state.jobs.filter(j=>j.active&&ids.has(j.id)&&!hidden.has(j.id));
+ return state.jobs.filter(j=>j.active&&ids.has(j.id)&&!hidden.has(j.id)&&(!BILLING_CATEGORY||j.billing_category===BILLING_CATEGORY));
 }
 
 async function loadContext(){
@@ -166,7 +169,7 @@ async function loadContext(){
  $('sideInitial').textContent=(r.data.username||'U')[0].toUpperCase();renderNav();
  try {
   await Promise.all([loadMaster(),fetchRows()]);
-  showPage('dashboard');
+  showPage(BILLING_CATEGORY?'dashboard':(new URLSearchParams(location.search).get('view')||'dashboard'));
  } catch(e) {
   console.error('Data pekerjaan gagal dimuat (login tetap berhasil):',e);
   state.jobs ||= [];state.rows ||= [];state.units ||= [];state.up3 ||= [];
@@ -178,16 +181,16 @@ async function loadContext(){
 function renderNav(){
  const admin=isAdmin();
  $('nav').innerHTML=`
-  <button class="nav-item" data-page="dashboard"><span class="nav-ico">◫</span>Dashboard</button>
+  <a class="nav-item ${!BILLING_CATEGORY?'active':''}" href="index.html"><span class="nav-ico">◫</span>Dashboard</a>
   ${admin?`<button type="button" class="nav-item nav-parent" id="navPekerjaan" aria-expanded="false"><span class="nav-ico">▤</span>Pekerjaan${admin?'<span id="pendingNavBadge" class="pending-nav-badge" hidden aria-label="Laporan menunggu verifikasi"></span>':''}<span class="nav-chevron">⌄</span></button>
   <div class="nav-submenu" id="navPekerjaanSub" hidden>
    ${admin?'<button class="nav-item nav-subitem" data-page="update">Update Pekerjaan</button><button class="nav-item nav-subitem" data-page="verify">Menunggu Verifikasi <span id="pendingSubBadge" class="pending-sub-badge" hidden></span></button>':''}
   </div>`:''}
-  <a class="nav-item" href="prabilling.html"><span class="nav-ico">◷</span>Pra Billing</a>
-  <a class="nav-item" href="pascabilling.html"><span class="nav-ico">▣</span>Pasca Billing</a>`;
+  <a class="nav-item ${BILLING_CATEGORY==='PRA'?'active':''}" href="prabilling.html"><span class="nav-ico">◷</span>Pra Billing</a>
+  <a class="nav-item ${BILLING_CATEGORY==='PASCA'?'active':''}" href="pascabilling.html"><span class="nav-ico">▣</span>Pasca Billing</a>`;
  const parent=$('navPekerjaan'), sub=$('navPekerjaanSub');
  if(parent&&sub)parent.onclick=()=>{const opening=sub.hidden;sub.hidden=!opening;parent.setAttribute('aria-expanded',String(opening));parent.classList.toggle('expanded',opening)};
- document.querySelectorAll('[data-page]').forEach(b=>b.onclick=()=>showPage(b.dataset.page));
+ document.querySelectorAll('[data-page]').forEach(b=>b.onclick=()=>{if(BILLING_CATEGORY){location.href='index.html?view='+encodeURIComponent(b.dataset.page)}else showPage(b.dataset.page)});
 }
 function updatePendingNav(){
  const count=isAdmin()?state.rows.filter(r=>r.status==='PENDING'&&currentJobs().some(j=>j.id===r.job_id)).length:0;
@@ -205,7 +208,7 @@ function showPage(page,params={}){
   if(sub&&parent){sub.hidden=false;parent.setAttribute('aria-expanded','true');parent.classList.add('expanded')}
  }
  const titles={dashboard:'Dashboard',pekerjaan:'Pekerjaan',detail:'Detail Pekerjaan',update:'Update Pekerjaan',verify:'Verifikasi Pekerjaan'};
- $('pageTitle').textContent=titles[page]||'BILLINGS2JB';$('pageSubtitle').textContent=period();
+ $('pageTitle').textContent=page==='dashboard'&&BILLING_CATEGORY?billingCategoryName(BILLING_CATEGORY):titles[page]||'BILLINGS2JB';$('pageSubtitle').textContent=period();
  $('month').value=String(state.periodMonth);$('year').value=String(state.periodYear);
  $('app').querySelector('.sidebar').classList.remove('show');
  try{({dashboard:renderDashboard,pekerjaan:renderPekerjaan,detail:renderDetail,update:renderUpdate,verify:renderVerify}[page]||renderDashboard)()}catch(e){err(e);console.error(e)}
@@ -234,50 +237,7 @@ function dashboardMatrix(){
    }html+='</tr>';
  }return html+'</tbody></table></div>';
 }
-function renderDashboard(){
- const entityLabel=isAdmin()?'Seluruh UP3':isUP3()?up3Label(state.profile.up3_code):unitLabel(state.profile.ulp_code);
- const jobs=currentJobs();
- const visibleJobIds=new Set(jobs.map(j=>j.id));
- const allStats=groupStats(state.rows.filter(r=>visibleJobIds.has(r.job_id)));
- const fmt=n=>Number(n).toLocaleString('id-ID');
- const jobCards=jobs.length?jobs.map((job,i)=>{
-  const rows=state.rows.filter(r=>r.job_id===job.id),s=groupStats(rows);
-  const unstarted=Math.max(0,s.total-s.approved-s.pending);
-  const radius=43,circ=2*Math.PI*radius;
-  const donutColor=rankColor(s.pct); // Satu palet dengan highlight ranking
-  // Donut menunjukkan realisasi disetujui terhadap target, bukan komposisi status.
-  // Rumus 'Belum' dan tooltip ULP terendah tetap dipertahankan.
-  const parts=[
-   {key:'target',name:'Target',count:s.total,color:'#EAF0F7'},
-   {key:'approved',name:'Realisasi',count:s.approved,color:'#70DCC1'},
-   {key:'pending',name:'Menunggu Verifikasi',count:s.pending,color:'#F5D98C'},
-   {key:'unstarted',name:'Belum',count:unstarted,color:'#EF7777'}
-  ];
-  const arcLength=Math.max(0,Math.min(circ,s.pct/100*circ));
-  const arcs=arcLength>0?`<circle cx="60" cy="60" r="${radius}" fill="none" stroke="${donutColor}" stroke-width="14" stroke-dasharray="${arcLength} ${circ}" transform="rotate(-90 60 60)"/>`:'';
-  const rankingUnits=isAdmin()?state.up3.map(u=>({code:u.code,name:u.name,rows:rows.filter(r=>up3For(r.ulp_code)===u.code)})):isUP3()?state.units.filter(u=>u.up3_code===state.profile.up3_code).map(u=>({code:u.code,name:u.name,rows:rows.filter(r=>r.ulp_code===u.code)})):[{code:state.profile.ulp_code,name:unitLabel(state.profile.ulp_code),rows}];
-  const ranking=rankingUnits.map(u=>({...u,stats:groupStats(u.rows)})).sort((a,b)=>b.stats.pct-a.stats.pct||String(a.name).localeCompare(String(b.name)));
-  const lowest=state.units.filter(u=>isAdmin()||isUP3()&&u.up3_code===state.profile.up3_code||!isAdmin()&&!isUP3()&&u.code===state.profile.ulp_code).map(u=>({...u,stats:groupStats(rows.filter(r=>r.ulp_code===u.code))})).filter(u=>u.stats.total>0).sort((a,b)=>a.stats.pct-b.stats.pct||a.code.localeCompare(b.code)).slice(0,5);
-  const tooltip=lowest.length?lowest.map((u,n)=>`<div class="low-row"><span>${n+1}. ${esc(u.name||u.code)}</span><b>${u.stats.pct}%</b></div>`).join(''):'<div class="low-row">Belum ada target ULP</div>';
-  return `<article class="job-overview job-openable" data-openjob-card="${esc(job.id)}" tabindex="0" role="link" aria-label="Buka daftar pelanggan pekerjaan ${esc(job.title)}">
-   <div class="job-overview-head"><div><h4>${esc(job.title)}</h4></div></div>
-   <div class="job-visuals"><div class="job-donut-section"><div class="donut-and-status"><div class="donut-chart"><svg viewBox="0 0 120 120" role="img" aria-label="Capaian ${s.pct}%"><defs><linearGradient id="premiumDonut${i}" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="${s.pct>=100?'#A5FF9C':donutColor}"/><stop offset="100%" stop-color="${s.pct>=100?'#25E98A':donutColor}"/></linearGradient></defs><circle class="donut-3d-depth" cx="60" cy="65" r="43" fill="none" stroke="#102331" stroke-width="15"/><circle class="donut-3d-rim" cx="60" cy="62" r="43" fill="none" stroke="#315767" stroke-width="13"/><circle cx="60" cy="60" r="43" fill="none" stroke="#142a39" stroke-width="12"/>${arcs.replace(`stroke="${donutColor}"`, `stroke="url(#premiumDonut${i})"`).replace('stroke-width="14"', 'stroke-width="12" stroke-linecap="round"')}<text x="60" y="60" text-anchor="middle" dominant-baseline="central" fill="${donutColor}" font-size="29" font-weight="850">${s.pct}</text></svg></div>
-   <div class="donut-legend">${parts.map(part=>`<div class="legend-item ${part.key==='unstarted'?'legend-hover legend-unstarted':''}" ${part.key==='unstarted'?'tabindex="0" aria-label="Lihat ULP dengan realisasi terendah"':''}><span class="legend-dot" style="background:${part.color}"></span><span class="legend-label">${part.name}</span><strong>${fmt(part.count)}</strong>${part.key==='unstarted'?`<div class="low-tooltip"><div class="low-tooltip-title">ULP Realisasi Terendah</div><small>Khusus ${esc(job.title)}</small>${tooltip}</div>`:''}</div>`).join('')}</div></div></div>
-   <div class="job-ranking"><div class="ranking-title">${isAdmin()?'Ranking UP3':'Ranking ULP'} <small>Berdasarkan capaian</small></div><div class="ranking-bars">${ranking.length?ranking.map(u=>`<button type="button" class="rank-row rank-click" style="--rank-color:${rankColor(u.stats.pct)}" data-rank-unit="${esc(u.code)}" data-rank-job="${esc(job.id)}" title="Klik untuk rincian ${esc(u.name||u.code)}"><span class="rank-glass-fill" style="--rank-progress:${Math.max(0,Math.min(100,u.stats.pct))}%;--rank-color:${rankColor(u.stats.pct)}" aria-hidden="true"></span><span class="rank-glass-light" aria-hidden="true"></span><span class="rank-line"><span title="${esc(u.name)}">${esc(u.name||u.code)}</span><b class="rank-percent">${u.stats.pct}%</b></span></button>`).join(''):'<div class="ranking-empty">Belum ada target pada periode ini.</div>'}</div></div></div>
-  </article>`;
- }).join(''):'<div class="empty">Belum ada pekerjaan aktif pada sistem.</div>';
- h(`<div class="section-head"><div><h3>Ringkasan Realisasi per Pekerjaan</h3><div class="panel-sub">${esc(entityLabel)} · ${period()} · Hanya hasil disetujui Admin dihitung sebagai realisasi.</div></div><button class="btn" id="refreshDashboard">↻ Refresh</button></div>
- <div class="overview-list">${jobCards}</div>
- <section class="panel drill-panel" id="drillPanel" hidden><div id="drillDown"></div></section>`);
- $('refreshDashboard').onclick=refresh;
- document.querySelectorAll('[data-rank-unit]').forEach(e=>e.onclick=()=>renderDrill(e.dataset.rankUnit,e.dataset.rankJob));
- // Kartu utama membuka daftar pelanggan; tombol ranking tetap membuka drilldown unit.
- document.querySelectorAll('[data-openjob-card]').forEach(card=>{
-  const open=()=>showPage('detail',{job:card.dataset.openjobCard});
-  card.addEventListener('click',e=>{if(e.target.closest('button,a,input,select,textarea,.legend-hover,.low-tooltip'))return;open()});
-  card.addEventListener('keydown',e=>{if(e.target!==card)return;if(e.key==='Enter'||e.key===' '){e.preventDefault();open()}});
- });
-}
+
 function rankColor(v){return v>=100?'#36F28F':v>=80?'#86DCA9':v>=60?'#F5D98C':'#EF7777'}
 function exportUnfinished(jobid,ulp){
  try{
@@ -452,6 +412,7 @@ function renderUpdateTab(tab){const node=$('updatePane');const jobs=currentJobs(
  node.innerHTML=`<section class="panel"><h3>Tambah Pekerjaan Baru</h3><div class="panel-sub">Admin menentukan dua bagian template dalam satu pekerjaan. Nama kolom dipisah baris atau koma.</div>
  <form id="newJobForm" class="form-grid" style="margin-top:23px">
  <label class="wide">Judul Pekerjaan<input id="jobTitle" required maxlength="180" placeholder="Contoh: Monitoring Meter Tua"></label>
+ <label class="wide">Kategori Induk Pekerjaan<select id="jobCategory" required><option value="PRA">Pra Billing</option><option value="PASCA">Pasca Billing</option></select><span class="help">Pekerjaan otomatis muncul di halaman kategori yang dipilih dan Dashboard utama.</span></label>
  <label>Template 1 · Kolom Data Target / Pelanggan<textarea id="targetCols" rows="9" required placeholder="IDPEL&#10;TARIF&#10;DAYA&#10;NOMOR METER"></textarea><span class="help">Wajib ada kolom UNITUP di file upload (kode ULP). Kolom UNITUP juga boleh dimasukkan ke template ini.</span></label>
  <label>Template 2 · Kolom Realisasi ULP<textarea id="reportCols" rows="9" required placeholder="TANGGAL TL&#10;HASIL PEKERJAAN&#10;KETERANGAN"></textarea><span class="help">Masukkan nama kolom, lalu atur tipe input dan bintang verifikasinya.</span></label>
  <div class="wide"><button class="btn" id="configureFields" type="button">⚙ Atur Jenis Input & Bintang</button><div id="fieldConfigPane" style="margin-top:12px"></div></div>
@@ -479,7 +440,8 @@ function renderUpdateTab(tab){const node=$('updatePane');const jobs=currentJobs(
  $('importJob').onchange=()=>importFeedback('Pekerjaan terpilih. Pilih file, lalu klik Upload Target.');
  $('uploadRun').onclick=uploadImport;
  }else{
- node.innerHTML=`<section class="panel"><div class="section-head"><div><h3>Daftar Pekerjaan</h3><div class="panel-sub">Kelola pekerjaan periode ${esc(period())}. Hapus hanya menyembunyikan judul di bulan terpilih. Data dan histori tetap aman.</div></div></div><div class="table-scroll"><table class="data-table"><thead><tr><th>Judul</th><th>Template Target</th><th>Template Realisasi</th><th>Aksi</th></tr></thead><tbody>${jobs.map(j=>`<tr><td><b>${esc(j.title)}</b></td><td>${esc(columns(j,'target_columns').join(', '))}</td><td>${esc(columns(j,'report_columns').join(', '))}</td><td><div class="toolbar"><button class="btn" data-templatejob="${j.id}">↓ Template</button><button class="btn" data-configjob="${j.id}">⚙ Realisasi</button><button class="btn danger" data-deletejob="${j.id}">✕ Hapus Bulan Ini</button></div></td></tr>`).join('')||'<tr><td colspan="4">Belum ada pekerjaan.</td></tr>'}</tbody></table></div><div id="hiddenJobPanel" style="margin-top:22px"></div></section>`;
+ node.innerHTML=`<section class="panel"><div class="section-head"><div><h3>Daftar Pekerjaan</h3><div class="panel-sub">Kelola pekerjaan periode ${esc(period())}. Hapus hanya menyembunyikan judul di bulan terpilih. Data dan histori tetap aman.</div></div></div><div class="table-scroll"><table class="data-table"><thead><tr><th>Judul</th><th>Kategori</th><th>Template Target</th><th>Template Realisasi</th><th>Aksi</th></tr></thead><tbody>${jobs.map(j=>`<tr><td><b>${esc(j.title)}</b></td><td><select data-category-job="${esc(j.id)}" aria-label="Kategori ${esc(j.title)}"><option value="PRA" ${j.billing_category==='PRA'?'selected':''}>Pra Billing</option><option value="PASCA" ${j.billing_category==='PASCA'?'selected':''}>Pasca Billing</option></select></td><td>${esc(columns(j,'target_columns').join(', '))}</td><td>${esc(columns(j,'report_columns').join(', '))}</td><td><div class="toolbar"><button class="btn" data-templatejob="${j.id}">↓ Template</button><button class="btn" data-configjob="${j.id}">⚙ Realisasi</button><button class="btn danger" data-deletejob="${j.id}">✕ Hapus Bulan Ini</button></div></td></tr>`).join('')||'<tr><td colspan="4">Belum ada pekerjaan.</td></tr>'}</tbody></table></div><div id="hiddenJobPanel" style="margin-top:22px"></div></section>`;
+ document.querySelectorAll('[data-category-job]').forEach(select=>select.onchange=async()=>{const id=select.dataset.categoryJob,category=select.value;select.disabled=true;try{const {error}=await sb.from('billing_jobs').update({billing_category:category}).eq('id',id);if(error)throw error;const job=jobBy(id);if(job)job.billing_category=category;toast('Kategori pekerjaan berhasil diperbarui.');}catch(e){err(e);select.value=jobBy(id)?.billing_category||'PASCA'}finally{select.disabled=false}});
  document.querySelectorAll('[data-templatejob]').forEach(btn=>btn.onclick=()=>downloadTemplateForJob(btn.dataset.templatejob));
  document.querySelectorAll('[data-configjob]').forEach(btn=>btn.onclick=()=>editJobConfig(btn.dataset.configjob));
  document.querySelectorAll('[data-deletejob]').forEach(btn=>btn.onclick=()=>deleteJob(btn.dataset.deletejob,btn));
@@ -547,7 +509,8 @@ function renderFieldConfigurator(){
  document.querySelectorAll('[data-field-star]').forEach(e=>e.onchange=()=>state.configDraft[Number(e.dataset.fieldStar)].starred=e.checked);
  document.querySelectorAll('[data-field-required]').forEach(e=>e.onchange=()=>state.configDraft[Number(e.dataset.fieldRequired)].required=e.checked);
 }
-async function createJob(ev){ev.preventDefault();const title=$('jobTitle').value.trim(),tc=parseCols($('targetCols').value),rc=parseCols($('reportCols').value);
+async function createJob(ev){ev.preventDefault();const title=$('jobTitle').value.trim(),billingCategory=$('jobCategory').value,tc=parseCols($('targetCols').value),rc=parseCols($('reportCols').value);
+ if(!['PRA','PASCA'].includes(billingCategory))return toast('Pilih kategori Pra atau Pasca Billing.',true);
  if(!tc.length||!rc.length)return toast('Kedua template harus memiliki minimal satu kolom.',true);
  if(tc.some(c=>rc.includes(c)))return toast('Nama kolom target dan realisasi tidak boleh sama.',true);
  if(title.length<3)return toast('Judul minimal tiga karakter.',true);
@@ -556,7 +519,7 @@ async function createJob(ev){ev.preventDefault();const title=$('jobTitle').value
  if(cfg.some(f=>f.type==='select'&&!f.options.length))return toast('Dropdown harus memiliki minimal satu kategori.',true);
  const btn=ev.target.querySelector('button[type=submit]');busy(btn,true);
  try{
-  const {data,error}=await sb.from('billing_jobs').insert({title,target_columns:tc,report_columns:rc,report_config:cfg}).select('id,title').single();
+  const {data,error}=await sb.from('billing_jobs').insert({title,billing_category:billingCategory,target_columns:tc,report_columns:rc,report_config:cfg}).select('id,title').single();
   if(error)throw error;
   const registration=await sb.from('billing_job_periods').upsert({job_id:data.id,period_year:state.periodYear,period_month:state.periodMonth},{onConflict:'job_id,period_year,period_month'});
   if(registration.error)throw new Error('Judul dibuat, tetapi gagal mengaktifkannya untuk periode '+period()+': '+registration.error.message);
