@@ -193,7 +193,7 @@ function updatePendingNav(){
 }
 function showPage(page,params={}){
  state.page=page;
- if('job' in params)state.job=params.job;
+ if('job' in params){if(state.job!==params.job)state.detailPage=1;state.job=params.job;}
  if(page==='dashboard')state.selectedUp3=null,state.selectedJob=null;
  document.querySelectorAll('.nav-item[data-page]').forEach(b=>b.classList.toggle('active',b.dataset.page===page));
  updatePendingNav();
@@ -325,19 +325,32 @@ function renderDetail(){
  const all=state.rows.filter(r=>r.job_id===job.id);
  const rows=isULP()?all.filter(r=>r.status==='OPEN'||r.status==='REJECTED'):all;
  const s=groupStats(all);
+ const pageSize=25,totalPages=Math.max(1,Math.ceil(rows.length/pageSize));
+ state.detailPage=Math.min(Math.max(1,Number(state.detailPage)||1),totalPages);
+ const start=(state.detailPage-1)*pageSize;
+ const visibleRows=rows.slice(start,start+pageSize);
  let html=`<section class="panel"><div class="section-head"><div><h3>${esc(job.title)}</h3><div class="panel-sub">${esc(period())} · ${s.approved}/${s.total} diterima, ${s.pending} menunggu verifikasi</div></div><div class="toolbar"><button class="btn" id="backJobs">← Kembali</button>${isAdmin()?'<button class="btn primary" id="exportOne">↓ Download Excel</button><button class="btn" id="exportZip">↓ ZIP Eviden</button><button class="btn danger" id="archiveEvidence">📦 Arsip & Kosongkan Foto</button>':''}</div></div>`;
  if(isULP())html+=`<div class="notice">Isi realisasi pada kolom hijau, lalu klik <b>Simpan & Kirim Verifikasi</b>. Setelah berhasil dikirim, baris akan hilang dari daftar pengisian ini dan masuk antrean Admin. Baris yang ditolak akan muncul lagi dengan alasan revisi.</div>`;
  else html+=`<div class="notice">Halaman ini hanya untuk melihat detail pekerjaan. ${isUP3()?'Akun UP3 tidak dapat mengubah data.':'Admin melakukan verifikasi melalui menu Pekerjaan → Menunggu Verifikasi.'}</div>`;
  if(isULP()&&rows.length)html+=`<div class="toolbar" style="margin:15px 0"><button class="btn primary" id="submitAll">✓ Simpan & Kirim Semua yang Diisi</button></div>`;
  html+=`<div class="table-scroll"><table class="data-table"><thead><tr><th>No</th><th>ULP</th>${cols1.map(c=>`<th class="target-head">${esc(c)}</th>`).join('')}${cols2.map(c=>`<th class="report-head">${esc(c)}</th>`).join('')}<th>Status</th>${isULP()?'<th>Aksi</th>':''}</tr></thead><tbody>`;
  if(!rows.length)html+=`<tr><td colspan="${cols1.length+cols2.length+4}"><div class="empty"><strong>${isULP()?'Tidak ada pekerjaan yang perlu diisi':'Tidak ada data target'}</strong>${isULP()?'Pekerjaan yang sudah dikirim sedang menunggu verifikasi, atau belum ada target pada periode ini.':''}</div></td></tr>`;
- rows.forEach((r,i)=>{
+ visibleRows.forEach((r,i)=>{
   const draft=state.draft[r.id]||r.report_data||{};
-  html+=`<tr><td>${i+1}</td><td>${esc(unitLabel(r.ulp_code))}</td>${cols1.map(c=>`<td title="${esc(r.target_data?.[c])}">${esc(r.target_data?.[c])}</td>`).join('')}`;
+  html+=`<tr><td>${start+i+1}</td><td>${esc(unitLabel(r.ulp_code))}</td>${cols1.map(c=>`<td title="${esc(r.target_data?.[c])}">${esc(r.target_data?.[c])}</td>`).join('')}`;
   html+=fields.map(f=>isULP()?`<td>${htmlField(f,r,draft)}</td>`:`<td>${f.type==='photo'?photoHtml(photoDataVal(r.report_data?.[f.name]),photoArchived(r,f.name)):esc(r.report_data?.[f.name])}</td>`).join('');
   html+=`<td>${badge(r.status)}${r.rejection_note?`<div class="status-note">${esc(r.rejection_note)}</div>`:''}</td>${isULP()?`<td><button class="btn primary" data-submit="${r.id}">Simpan & Kirim</button></td>`:''}</tr>`;
  });
- html+='</tbody></table></div></section>';h(html);
+ html+='</tbody></table></div>';
+ if(rows.length>pageSize){
+  html+=`<div class="detail-pagination" style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-top:16px"><span>Menampilkan ${start+1}–${Math.min(start+pageSize,rows.length)} dari ${rows.length} pelanggan · 25 per halaman</span><div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><button class="btn" id="detailPrev" ${state.detailPage===1?'disabled':''}>← Sebelumnya</button><label style="display:flex;align-items:center;gap:6px">Halaman <input id="detailPageInput" type="number" min="1" max="${totalPages}" value="${state.detailPage}" style="width:68px;padding:7px;border-radius:8px" aria-label="Nomor halaman"> / ${totalPages}</label><button class="btn" id="detailNext" ${state.detailPage===totalPages?'disabled':''}>Berikutnya →</button></div></div>`;
+ }
+ html+='</section>';h(html);
+ const goDetailPage=n=>{const next=Math.min(totalPages,Math.max(1,Number(n)||1));if(next===state.detailPage)return;state.detailPage=next;renderDetail();};
+ if($('detailPrev'))$('detailPrev').onclick=()=>goDetailPage(state.detailPage-1);
+ if($('detailNext'))$('detailNext').onclick=()=>goDetailPage(state.detailPage+1);
+ if($('detailPageInput'))$('detailPageInput').onchange=e=>goDetailPage(e.target.value);
+
  $('backJobs').onclick=()=>showPage('dashboard');
  if(isAdmin()){$('exportOne').onclick=()=>exportJob(job);$('exportZip').onclick=()=>downloadEvidenceZip(job);$('archiveEvidence').onclick=()=>archiveEvidence(job);}
  if(isULP()){
