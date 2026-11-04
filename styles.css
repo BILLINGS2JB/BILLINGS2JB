@@ -130,3 +130,62 @@ body{background:radial-gradient(ellipse 85% 60% at 80% -15%,#29485a 0%,transpare
 @media(prefers-reduced-motion:reduce){
   .job-overview,.rank-row.rank-click,.btn,.nav-item{transition:none!important;transform:none!important}
 }
+
+
+/* BILLINGS2JB | Futuristic 3D: visual enhancement, zero logic changes */
+body{background:radial-gradient(ellipse 70% 48% at 83% 0%,#294c61 0%,transparent 80%),linear-gradient(145deg,#182838,#14202e 75%);background-attachment:fixed}
+.main{perspective:1600px}
+.overview-list{perspective:1600px;gap:22px}
+.job-overview{
+  transform-style:preserve-3d;
+  transform:translateZ(0) rotateX(0deg);
+  background:linear-gradient(145deg,#385468 0%,#293e51 16%,#223345 48%,#192a3b 100%);
+  border:1px solid #608296;
+  border-top-color:#8aafba;
+  border-left-color:#6e929f;
+  box-shadow:inset 0 2px 1px #d6fff21c,inset 2px 0 1px #d6fff20c,inset -2px -3px 8px #08152250,0 5px 0 #10202e,0 8px 0 #0a1825,0 23px 36px #050d17a1,0 37px 62px #050d1760;
+  transition:transform .28s cubic-bezier(.2,.8,.2,1),box-shadow .28s,border-color .28s;
+}
+.job-overview:hover{
+  transform:translateY(-5px) rotateX(1.2deg);
+  border-color:#85bcbf;
+  box-shadow:inset 0 2px 1px #d6fff229,inset -2px -3px 8px #08152250,0 7px 0 #10202e,0 11px 0 #0a1825,0 30px 46px #050d17b5,0 45px 72px #050d1770;
+}
+.job-overview::before{
+  z-index:0;
+  background:radial-gradient(ellipse 65% 45% at 16% 0%,#a6ffed20,transparent 90%),linear-gradient(130deg,#ffffff0d,transparent 42%);
+}
+.job-overview>*{position:relative;z-index:1}
+.job-overview-head{border-bottom-color:#b1e8e526}
+.donut-chart{position:relative;filter:drop-shadow(0 10px 6px #07182485) drop-shadow(0 0 15px #4bd8bb24);transform:perspective(450px) rotateX(8deg);transition:transform .3s}
+.job-overview:hover .donut-chart{transform:perspective(450px) rotateX(3deg) scale(1.045)}
+.donut-3d-depth{filter:drop-shadow(0 2px 1px #020b15a0)}
+.donut-3d-rim{opacity:.9}
+.donut-chart svg text:first-of-type{filter:drop-shadow(0 2px 2px #081521a0)}
+.donut-legend{padding:8px 10px;border-radius:12px;background:linear-gradient(135deg,#ffffff0a,#091a270a);border:1px solid #ffffff0c}
+.legend-item strong{text-shadow:0 2px 6px #08152270}
+.job-ranking{border-left:1px solid #a6d9d52a}
+.rank-row.rank-click .rank-track{
+  height:8px;
+  background:linear-gradient(180deg,#0e2030,#1d3648 70%,#2d4b5b);
+  border:1px solid #426274;
+  box-shadow:inset 0 2px 4px #050f1ba0,0 1px 0 #a9e4df12;
+}
+.rank-row.rank-click .rank-track i{
+  position:relative;
+  background-image:linear-gradient(180deg,#ffffff50 0%,#ffffff0c 38%,#00000021 100%)!important;
+  background-blend-mode:screen;
+  box-shadow:inset 0 1px 0 #ffffff65,0 2px 5px #0719237d,0 0 10px #70dcc129;
+}
+.rank-row.rank-click:hover{box-shadow:inset 0 1px 0 #b8fff012,0 3px 12px #08172255}
+.verification-banner{box-shadow:inset 0 1px 0 #fff5c124,0 4px 0 #252719,0 16px 30px #07111d72}
+.sidebar{box-shadow:inset -1px 0 0 #9eddd010,8px 0 32px #040e1855}
+.topbar{box-shadow:0 3px 0 #0f1d2b,0 10px 25px #07111b42}
+@media(max-width:730px){
+  .job-overview,.job-overview:hover{transform:none}
+  .donut-chart,.job-overview:hover .donut-chart{transform:none}
+  .donut-legend{padding:6px}
+}
+@media(prefers-reduced-motion:reduce){
+  .job-overview:hover,.job-overview,.donut-chart,.job-overview:hover .donut-chart{transform:none!important;transition:none!important}
+}
