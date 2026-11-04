@@ -328,6 +328,29 @@ body{background:radial-gradient(ellipse 70% 48% at 83% 0%,#294c61 0%,transparent
 /* Bright green on 100% ranking; keep white text and glossy illumination */
 .rank-row.rank-click .rank-glass-fill{background:linear-gradient(180deg,color-mix(in srgb,var(--rank-color) 65%,white 35%) 0%,var(--rank-color) 53%,color-mix(in srgb,var(--rank-color) 88%,#0f8555 12%) 100%)!important;opacity:.94}
 .rank-row.rank-click .rank-line b{color:#fff!important;filter:none!important}
-.job-card {
-  cursor: pointer;
-}
+
+/* BILLINGS2JB — ULP Hybrid Aurora / Clean White Worktable */
+.billing-detail{background:linear-gradient(145deg,#263d50,#1b2d40)!important;border:1px solid #547081!important;color:#f4fbff!important;box-shadow:0 16px 38px #07121d25!important}
+.billing-detail .section-head h3{color:#f4fbff!important}.billing-detail .panel-sub{color:#c1d2df!important}
+.billing-detail .notice{background:#eaf5f7;color:#244354;border-color:#b5d8dc}
+.billing-detail-toolbar{display:flex;align-items:end;gap:12px;flex-wrap:wrap;padding:15px;border-radius:14px;background:#ffffff12;border:1px solid #ffffff20;margin:16px 0}
+.billing-detail-toolbar label{color:#e5f2f7;flex:1;min-width:180px;max-width:370px}
+.billing-detail-toolbar input,.billing-detail-toolbar select{width:100%;background:white;color:#263b4a}
+.billing-filter-count{font-size:12px;color:#d5e8ed;margin-bottom:10px}
+.billing-detail-actions{position:sticky;top:0;z-index:10;padding:10px;background:#253c4bee;border:1px solid #597284;border-radius:12px;backdrop-filter:blur(5px)}
+.billing-detail-actions .btn.primary{background:linear-gradient(120deg,#6de8b0,#21c981);border-color:#3fdfa1;color:#073c2b}
+.billing-detail-scroll{max-height:min(68vh,720px);overflow:auto;background:#fff;border:1px solid #d9e3eb;border-radius:12px;position:relative}
+.billing-detail-table{color:#243749!important;background:#fff!important}
+.billing-detail-table th{background:#f0f3f7!important;color:#33475b!important;position:sticky;top:0;z-index:3!important;border-bottom:2px solid #d9e2e9!important}
+.billing-detail-table th.report-head{background:#e8f5ed!important;color:#275b43!important}
+.billing-detail-table td{color:#263849!important;background:#fff!important;border-bottom:1px solid #e7ecf1!important}
+.billing-detail-table tbody tr:nth-child(even) td{background:#f8fafc!important}
+.billing-detail-table tbody tr:hover td{background:#eff7fa!important}
+.billing-detail-table td:has(input[data-row],select[data-row],input[data-file-row]){background:#effaf2!important}
+.billing-detail-table .sticky-idpel{position:sticky!important;left:0!important;min-width:140px;max-width:170px;z-index:4!important;box-shadow:2px 0 0 #d7e5e7}
+.billing-detail-table .sticky-nama{position:sticky!important;left:140px!important;min-width:175px;max-width:205px;z-index:4!important;box-shadow:2px 0 0 #b7d5d4}
+.billing-detail-table thead .sticky-idpel,.billing-detail-table thead .sticky-nama{z-index:7!important;background:#e8f0f4!important}
+.billing-detail .detail-pagination{color:#e2eef4!important}.billing-detail .detail-pagination label{color:#e2eef4!important}
+.billing-export-backdrop{position:fixed;inset:0;background:#071625b8;z-index:2000;display:grid;place-items:center;padding:20px}
+.billing-export-dialog{background:#f9fcfe;color:#23394b;border-radius:18px;padding:25px;max-width:400px;width:100%;box-shadow:0 24px 80px #07121d88;display:grid;gap:10px}
+.billing-export-dialog h3{margin:0}.billing-export-dialog p{margin:0 0 10px;color:#667a8b}.billing-export-dialog .btn{text-align:left;padding:12px}
