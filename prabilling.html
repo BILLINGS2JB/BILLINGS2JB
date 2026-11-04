@@ -1,6 +1,36 @@
 <!doctype html>
-<html lang="id"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>BILLINGS2JB | Pra Billing</title><link rel="stylesheet" href="styles.css"></head>
-<body><div class="app" id="app"><aside class="sidebar"><div class="brand"><div class="logo">B<span>2</span></div><div><b>BILLINGS2JB</b><small>Monitoring Billing</small></div></div>
-<nav><a class="nav-item" href="index.html"><span class="nav-ico">◫</span>Dashboard</a><a class="nav-item" href="index.html"><span class="nav-ico">▤</span>Pekerjaan</a><a class="nav-item active" href="prabilling.html"><span class="nav-ico">◷</span>Pra Billing</a><a class="nav-item " href="pascabilling.html"><span class="nav-ico">▣</span>Pasca Billing</a></nav></aside>
-<main class="main"><header class="topbar"><button class="icon-button mobile-only" id="menuBtn" type="button">☰</button><div><h2>Pra Billing</h2><div class="muted">BILLINGS2JB · Aurora Glass 3D</div></div></header><div class="content"><section class="panel" style="min-height:220px;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;gap:12px"><div style="font-size:32px;color:#7ce2c8">◷</div><h3>Pra Billing</h3><p class="muted">Halaman disiapkan. Konten akan ditambahkan kemudian.</p></section></div></main></div>
-<script>document.getElementById('menuBtn').onclick=()=>document.querySelector('.sidebar').classList.toggle('show');</script></body></html>
+<html lang="id">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>BILLINGS2JB | Pra Billing</title>
+<link rel="stylesheet" href="styles.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+<script src="category-pages.js" defer></script>
+<script src="dashboard.js" defer></script>
+<script src="app.js" defer></script>
+</head>
+<body data-billing-category="PRA">
+<div id="toast" class="toast hidden"></div>
+<section id="login" class="login-screen hidden">
+  <div class="login-card">
+    <div class="logo-large"><img src="BILLINGS2JB_logo.png" alt="Logo BILLINGS2JB"></div><div class="eyebrow">MONITORING & PELAPORAN BILLING</div>
+    <h1>BILLINGS2JB</h1><p>Masuk untuk mengakses pekerjaan dan realisasi unit.</p>
+    <form id="loginForm"><label>Username atau Email<input id="loginUser" required placeholder="Contoh: 14S2JB" autocomplete="username"></label>
+    <label>Password<input id="loginPass" type="password" required placeholder="Password" autocomplete="current-password"></label>
+    <button class="primary full" type="submit" id="loginButton">Masuk</button></form>
+    <div class="login-note">Uji coba: 14S2JB · 14MBO · 14460</div>
+  </div>
+</section>
+<div id="app" class="app hidden">
+<aside class="sidebar">
+ <div class="brand"><div class="logo"><img src="BILLINGS2JB_logo.png" alt="Logo BILLINGS2JB"></div><div><b>BILLINGS2JB</b><small>Monitoring Billing</small></div></div>
+ <nav id="nav"></nav>
+ <div class="side-bottom"><div class="avatar" id="sideInitial">U</div><div class="side-user"><b id="sideUsername">-</b><small id="sideRole">-</small></div><button id="logout" class="icon-button" title="Keluar">↪</button></div>
+</aside>
+<main class="main">
+ <header class="topbar"><button id="menuBtn" class="icon-button mobile-only">☰</button><div><h2 id="pageTitle">Dashboard</h2><div class="muted" id="pageSubtitle">Monitoring pekerjaan</div></div><div class="top-actions"><label>Bulan<select id="month"></select></label><label>Tahun<select id="year"></select></label></div></header>
+ <div id="mainContent" class="content"></div>
+</main>
+</div>
+</body></html>
