@@ -268,3 +268,37 @@ body{background:radial-gradient(ellipse 70% 48% at 83% 0%,#294c61 0%,transparent
 
 /* FIX khusus angka tengah donut: ukuran besar, tanpa mengubah bagian lain */
 .donut-chart svg > text {font-size:30px!important;font-weight:900!important;letter-spacing:-1px!important;dominant-baseline:middle;paint-order:stroke fill;}
+
+/* 3-column compact overview — Aurora Glass preserved */
+.overview-list{display:grid!important;grid-template-columns:repeat(3,minmax(0,1fr))!important;gap:12px!important;align-items:start;margin-bottom:16px!important}
+.job-overview{min-width:0;padding:11px 12px!important;border-radius:13px!important}
+.job-overview-head{margin-bottom:8px!important;gap:5px!important}
+.job-overview-head .num{font-size:9px!important;line-height:1.1!important}
+.job-overview-head h4{font-size:12px!important;line-height:1.25!important;margin-top:3px!important}
+.job-visuals{display:flex!important;flex-direction:column!important;gap:8px!important}
+.job-donut-section{width:100%;min-width:0}
+.donut-and-status{display:flex!important;align-items:center!important;gap:10px!important}
+.donut-chart{width:73px!important;height:73px!important;flex:0 0 73px!important}
+.donut-chart svg{width:100%!important;height:100%!important}
+.donut-chart svg>text{font-size:25px!important;font-weight:850!important;letter-spacing:-.6px!important;dominant-baseline:auto!important}
+.donut-legend{display:grid!important;gap:2px!important;flex:1!important;min-width:0}
+.legend-item{grid-template-columns:7px minmax(0,1fr) auto!important;gap:5px!important;font-size:10px!important;min-height:16px!important}
+.legend-dot{width:7px!important;height:7px!important}
+.legend-item strong{font-size:11px!important}
+.job-ranking{width:100%;border-left:0!important;border-top:1px solid #638b8d50;padding:7px 0 0!important;min-width:0}
+.ranking-title{font-size:10px!important;margin-bottom:5px!important;line-height:1.1!important}
+.ranking-title small{display:inline!important;font-size:9px!important;margin-left:5px!important}
+.ranking-bars{max-height:none!important;overflow:visible!important;padding:0!important;display:grid;gap:3px!important}
+.rank-row.rank-click{margin:0!important;min-height:22px!important;border-radius:6px!important;padding:0 7px!important}
+.rank-row.rank-click .rank-line{min-height:22px!important;font-size:10px!important;line-height:1.15!important}
+.rank-row.rank-click .rank-line b{font-size:10px!important}
+/* Work submenu */
+.nav-parent{width:100%;text-align:left}
+.nav-chevron{margin-left:auto;transition:transform .2s ease}
+.nav-parent.expanded .nav-chevron{transform:rotate(180deg)}
+.nav-submenu{padding:3px 0 5px 15px;margin:0 0 3px 14px;border-left:1px solid #69cbb76b}
+.nav-submenu[hidden]{display:none!important}
+.nav-subitem{font-size:12px!important;min-height:35px!important;padding:8px 10px!important}
+.sidebar nav a.nav-item{text-decoration:none;display:flex;align-items:center}
+@media(max-width:1150px){.overview-list{grid-template-columns:repeat(2,minmax(0,1fr))!important}}
+@media(max-width:720px){.overview-list{grid-template-columns:1fr!important}}
