@@ -176,10 +176,10 @@ function renderNav(){
  const admin=isAdmin();
  $('nav').innerHTML=`
   <button class="nav-item" data-page="dashboard"><span class="nav-ico">◫</span>Dashboard</button>
-  <button type="button" class="nav-item nav-parent" id="navPekerjaan" aria-expanded="false"><span class="nav-ico">▤</span>Pekerjaan<span class="nav-chevron">⌄</span></button>
+  <button type="button" class="nav-item nav-parent" id="navPekerjaan" aria-expanded="false"><span class="nav-ico">▤</span>Pekerjaan${admin?'<span id="pendingNavBadge" class="pending-nav-badge" hidden aria-label="Laporan menunggu verifikasi"></span>':''}<span class="nav-chevron">⌄</span></button>
   <div class="nav-submenu" id="navPekerjaanSub" hidden>
    <button class="nav-item nav-subitem" data-page="pekerjaan">Daftar Pekerjaan</button>
-   ${admin?'<button class="nav-item nav-subitem" data-page="update">Update Pekerjaan</button>':''}
+   ${admin?'<button class="nav-item nav-subitem" data-page="update">Update Pekerjaan</button><button class="nav-item nav-subitem" data-page="verify">Menunggu Verifikasi <span id="pendingSubBadge" class="pending-sub-badge" hidden></span></button>':''}
   </div>
   <a class="nav-item" href="prabilling.html"><span class="nav-ico">◷</span>Pra Billing</a>
   <a class="nav-item" href="pascabilling.html"><span class="nav-ico">▣</span>Pasca Billing</a>`;
@@ -187,12 +187,18 @@ function renderNav(){
  parent.onclick=()=>{const opening=sub.hidden;sub.hidden=!opening;parent.setAttribute('aria-expanded',String(opening));parent.classList.toggle('expanded',opening)};
  document.querySelectorAll('[data-page]').forEach(b=>b.onclick=()=>showPage(b.dataset.page));
 }
+function updatePendingNav(){
+ const count=isAdmin()?state.rows.filter(r=>r.status==='PENDING'&&currentJobs().some(j=>j.id===r.job_id)).length:0;
+ const badge=$('pendingNavBadge'),subBadge=$('pendingSubBadge');
+ for(const el of [badge,subBadge])if(el){el.hidden=count===0;el.textContent=count?String(count):'';}
+}
 function showPage(page,params={}){
  state.page=page;
  if('job' in params)state.job=params.job;
  if(page==='dashboard')state.selectedUp3=null,state.selectedJob=null;
  document.querySelectorAll('.nav-item[data-page]').forEach(b=>b.classList.toggle('active',b.dataset.page===page));
- if(page==='pekerjaan'||page==='update'||page==='detail'){
+ updatePendingNav();
+ if(page==='pekerjaan'||page==='update'||page==='detail'||page==='verify'){
   const sub=$('navPekerjaanSub'),parent=$('navPekerjaan');
   if(sub&&parent){sub.hidden=false;parent.setAttribute('aria-expanded','true');parent.classList.add('expanded')}
  }
@@ -252,18 +258,16 @@ function renderDashboard(){
   const lowest=state.units.filter(u=>isAdmin()||isUP3()&&u.up3_code===state.profile.up3_code||!isAdmin()&&!isUP3()&&u.code===state.profile.ulp_code).map(u=>({...u,stats:groupStats(rows.filter(r=>r.ulp_code===u.code))})).filter(u=>u.stats.total>0).sort((a,b)=>a.stats.pct-b.stats.pct||a.code.localeCompare(b.code)).slice(0,5);
   const tooltip=lowest.length?lowest.map((u,n)=>`<div class="low-row"><span>${n+1}. ${esc(u.name||u.code)}</span><b>${u.stats.pct}%</b></div>`).join(''):'<div class="low-row">Belum ada target ULP</div>';
   return `<article class="job-overview">
-   <div class="job-overview-head"><div><div class="num">PEKERJAAN ${String(i+1).padStart(2,'0')}</div><h4>${esc(job.title)}</h4></div></div>
+   <div class="job-overview-head"><div><h4>${esc(job.title)}</h4></div></div>
    <div class="job-visuals"><div class="job-donut-section"><div class="donut-and-status"><div class="donut-chart"><svg viewBox="0 0 120 120" role="img" aria-label="Capaian ${s.pct}%"><defs><linearGradient id="premiumDonut${i}" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="${donutColor}"/><stop offset="100%" stop-color="${donutColor}"/></linearGradient></defs><circle class="donut-3d-depth" cx="60" cy="65" r="43" fill="none" stroke="#102331" stroke-width="15"/><circle class="donut-3d-rim" cx="60" cy="62" r="43" fill="none" stroke="#315767" stroke-width="13"/><circle cx="60" cy="60" r="43" fill="none" stroke="#142a39" stroke-width="12"/>${arcs.replace(`stroke="${donutColor}"`, `stroke="url(#premiumDonut${i})"`).replace('stroke-width="14"', 'stroke-width="12" stroke-linecap="round"')}<text x="60" y="65" text-anchor="middle" fill="${donutColor}" font-size="23" font-weight="750">${s.pct}%</text></svg></div>
    <div class="donut-legend">${parts.map(part=>`<div class="legend-item ${part.key==='unstarted'?'legend-hover legend-unstarted':''}" ${part.key==='unstarted'?'tabindex="0" aria-label="Lihat ULP dengan realisasi terendah"':''}><span class="legend-dot" style="background:${part.color}"></span><span class="legend-label">${part.name}</span><strong>${fmt(part.count)}</strong>${part.key==='unstarted'?`<div class="low-tooltip"><div class="low-tooltip-title">ULP Realisasi Terendah</div><small>Khusus ${esc(job.title)}</small>${tooltip}</div>`:''}</div>`).join('')}</div></div></div>
    <div class="job-ranking"><div class="ranking-title">${isAdmin()?'Ranking UP3':'Ranking ULP'} <small>Berdasarkan capaian</small></div><div class="ranking-bars">${ranking.length?ranking.map(u=>`<button type="button" class="rank-row rank-click" style="--rank-color:${rankColor(u.stats.pct)}" data-rank-unit="${esc(u.code)}" data-rank-job="${esc(job.id)}" title="Klik untuk rincian ${esc(u.name||u.code)}"><span class="rank-glass-fill" style="--rank-progress:${Math.max(0,Math.min(100,u.stats.pct))}%;--rank-color:${rankColor(u.stats.pct)}" aria-hidden="true"></span><span class="rank-glass-light" aria-hidden="true"></span><span class="rank-line"><span title="${esc(u.name)}">${esc(u.name||u.code)}</span><b class="rank-percent">${u.stats.pct}%</b></span></button>`).join(''):'<div class="ranking-empty">Belum ada target pada periode ini.</div>'}</div></div></div>
   </article>`;
  }).join(''):'<div class="empty">Belum ada pekerjaan aktif pada sistem.</div>';
  h(`<div class="section-head"><div><h3>Ringkasan Realisasi per Pekerjaan</h3><div class="panel-sub">${esc(entityLabel)} · ${period()} · Hanya hasil disetujui Admin dihitung sebagai realisasi.</div></div><button class="btn" id="refreshDashboard">↻ Refresh</button></div>
- ${isAdmin()?`<button type="button" class="panel verification-banner" id="goVerifyDashboard" title="Buka Verifikasi Pekerjaan"><div><b>Menunggu Verifikasi · Semua Pekerjaan</b><small>Klik untuk memeriksa laporan dari ULP</small></div><strong>${fmt(allStats.pending)} ↗</strong></button>`:''}
  <div class="overview-list">${jobCards}</div>
  <section class="panel drill-panel" id="drillPanel" hidden><div id="drillDown"></div></section>`);
  $('refreshDashboard').onclick=refresh;
- if(isAdmin()&&$('goVerifyDashboard'))$('goVerifyDashboard').onclick=()=>showPage('verify');
  document.querySelectorAll('[data-rank-unit]').forEach(e=>e.onclick=()=>renderDrill(e.dataset.rankUnit,e.dataset.rankJob));
 }
 function rankColor(v){return v>=100?'#24845F':v>=80?'#86DCA9':v>=60?'#F5D98C':'#EF7777'}
@@ -304,7 +308,10 @@ function renderDrill(unit,jobid){
 }
 function renderPekerjaan(){
  const jobs=currentJobs();
- h(`<section class="panel"><div class="section-head"><div><h3>Daftar Pekerjaan</h3><div class="panel-sub">${esc(period())} · ${jobs.length} judul pekerjaan</div></div></div>${jobs.length?`<div class="job-list">${jobs.map((j,i)=>{const rs=state.rows.filter(r=>r.job_id===j.id),s=groupStats(rs);return `<button class="job-card" data-openjob="${j.id}"><div class="num">PEKERJAAN ${String(i+1).padStart(2,'0')}</div><b>${esc(j.title)}</b><small>${s.approved}/${s.total} diterima · ${s.pending} menunggu verifikasi</small><div class="meter" style="width:100%;margin-top:13px"><i style="width:${s.pct}%"></i></div></button>`}).join('')}</div>`:'<div class="empty"><strong>Belum ada pekerjaan aktif</strong>Admin dapat membuat pekerjaan baru di menu Update Pekerjaan.</div>'}</section>`);
+ const pendingCount=state.rows.filter(r=>r.status==='PENDING'&&jobs.some(j=>j.id===r.job_id)).length;
+ const verificationBanner=isAdmin()?`<button type="button" class="panel verification-banner" id="goVerifyDashboard" title="Buka antrean verifikasi"><div><b>Menunggu Verifikasi · Semua Pekerjaan</b><small>Klik untuk memeriksa laporan dari ULP</small></div><strong>${pendingCount.toLocaleString('id-ID')} ↗</strong></button>`:'';
+ h(`${verificationBanner}<section class="panel"><div class="section-head"><div><h3>Daftar Pekerjaan</h3><div class="panel-sub">${esc(period())} · ${jobs.length} judul pekerjaan</div></div></div>${jobs.length?`<div class="job-list">${jobs.map((j,i)=>{const rs=state.rows.filter(r=>r.job_id===j.id),s=groupStats(rs);return `<button class="job-card" data-openjob="${j.id}"><div class="num">PEKERJAAN ${String(i+1).padStart(2,'0')}</div><b>${esc(j.title)}</b><small>${s.approved}/${s.total} diterima · ${s.pending} menunggu verifikasi</small><div class="meter" style="width:100%;margin-top:13px"><i style="width:${s.pct}%"></i></div></button>`}).join('')}</div>`:'<div class="empty"><strong>Belum ada pekerjaan aktif</strong>Admin dapat membuat pekerjaan baru di menu Update Pekerjaan.</div>'}</section>`);
+ if(isAdmin()&&$('goVerifyDashboard'))$('goVerifyDashboard').onclick=()=>showPage('verify');
  document.querySelectorAll('[data-openjob]').forEach(e=>e.onclick=()=>showPage('detail',{job:e.dataset.openjob}));
 }
 function renderDetail(){
