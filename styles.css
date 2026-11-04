@@ -189,3 +189,74 @@ body{background:radial-gradient(ellipse 70% 48% at 83% 0%,#294c61 0%,transparent
 @media(prefers-reduced-motion:reduce){
   .job-overview:hover,.job-overview,.donut-chart,.job-overview:hover .donut-chart{transform:none!important;transition:none!important}
 }
+
+
+/* BILLINGS2JB — Aurora Glass premium compact dashboard + login */
+/* Preserve two cards on desktop, including standard laptop viewports. */
+@media(min-width:901px){
+ .overview-list{grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:15px}
+ .job-overview{padding:15px 16px}
+ .job-visuals{display:grid;grid-template-columns:1fr;gap:13px}
+ .job-ranking{border-left:0;border-top:1px solid #a6d9d52a;padding:11px 0 0}
+ .donut-chart{width:112px;height:112px;flex:0 0 112px}
+ .donut-and-status{gap:14px}
+ .ranking-bars{max-height:none;overflow:visible;padding:0}
+}
+@media(min-width:1500px){
+ .job-visuals{grid-template-columns:minmax(0,1.05fr) minmax(0,1fr)}
+ .job-ranking{border-top:0;border-left:1px solid #a6d9d52a;padding:0 0 0 12px}
+ .donut-chart{width:108px;height:108px;flex-basis:108px}
+}
+@media(max-width:900px){.overview-list{grid-template-columns:1fr!important}.ranking-bars{max-height:none;overflow:visible}}
+/* Single-row illuminated glass ranking. Fill is proportional to completion. */
+.rank-row.rank-click{
+ --glow-x:50%;--glow-y:50%;
+ --rank-color:#70dcc1;position:relative;isolation:isolate;display:block;overflow:hidden;
+ min-height:37px;margin:0 0 6px;padding:0 11px;border-radius:10px;
+ border:1px solid #7397a04a;
+ background:linear-gradient(180deg,#354a5a,#243647 55%,#1c2d3e);
+ box-shadow:inset 0 1px 0 #ffffff20,inset 0 -2px 3px #0814218c,0 3px 9px #07121f55;
+ transition:transform .2s ease,box-shadow .2s ease,border-color .2s ease;
+}
+.rank-row.rank-click .rank-glass-fill{
+ position:absolute;z-index:0;inset:0 auto 0 0;width:var(--rank-progress);pointer-events:none;
+ background:linear-gradient(180deg,color-mix(in srgb,var(--rank-color) 66%,white 34%) 0%,var(--rank-color) 37%,color-mix(in srgb,var(--rank-color) 62%,#071d2b 38%) 100%);
+ box-shadow:inset 0 2px 1px #ffffff75,inset 0 -4px 9px #07131e80,3px 0 15px color-mix(in srgb,var(--rank-color) 65%,transparent);
+ opacity:.88;transition:width .45s ease;
+}
+.rank-row.rank-click .rank-glass-fill::after{content:"";position:absolute;top:4px;bottom:4px;right:0;width:2px;background:#ffffffc7;box-shadow:0 0 9px 3px var(--rank-color)}
+.rank-row.rank-click .rank-glass-light{
+ position:absolute;z-index:1;inset:0;pointer-events:none;opacity:.18;
+ background:radial-gradient(circle 100px at var(--glow-x) var(--glow-y),#ffffffb8,transparent 76%),linear-gradient(115deg,transparent 17%,#ffffff36 33%,transparent 49%);
+ transition:opacity .2s ease;
+}
+.rank-row.rank-click:hover .rank-glass-light,.rank-row.rank-click:focus-visible .rank-glass-light{opacity:.82}
+.rank-row.rank-click:hover,.rank-row.rank-click:focus-visible{
+ transform:translateY(-2px);outline:none;border-color:#b9f3edb8;
+ box-shadow:inset 0 1px 0 #ffffff60,0 0 0 1px #ffffff16,0 6px 20px #050e1c9c,0 0 17px color-mix(in srgb,var(--rank-color,#70dcc1) 30%,transparent);
+}
+.rank-row.rank-click .rank-line{position:relative;z-index:2;display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:35px;margin:0;font-size:11px}
+.rank-row.rank-click .rank-line span{color:#f5fbff;font-weight:750;text-shadow:0 1px 4px #07111ec9}
+.rank-row.rank-click .rank-line b{font-size:12px;flex-shrink:0;font-weight:850;text-shadow:0 1px 3px #07111edb;filter:brightness(1.3)}
+/* Login: same premium material, depth and illumination as dashboard. */
+.login-screen{position:relative;isolation:isolate;overflow:hidden;min-height:100svh;padding:28px 16px;background:radial-gradient(ellipse 52% 58% at 14% 12%,#1b56606b,transparent 72%),radial-gradient(ellipse 55% 65% at 85% 88%,#145c5b5c,transparent 73%),linear-gradient(145deg,#101d2c,#1b2e40 48%,#0c1826)}
+.login-screen::before{content:"";position:absolute;inset:0;z-index:-1;pointer-events:none;background-image:linear-gradient(#b8fff00a 1px,transparent 1px),linear-gradient(90deg,#b8fff00a 1px,transparent 1px);background-size:46px 46px;mask-image:linear-gradient(to bottom,#0007,transparent 90%)}
+.login-screen::after{content:"";position:absolute;z-index:-1;pointer-events:none;width:min(75vw,780px);height:min(75vw,780px);border:1px solid #72e8ce20;border-radius:50%;box-shadow:0 0 0 65px #6fe8c509,0 0 0 130px #6fe8c505;transform:translate(45%,35%)}
+.login-card{position:relative;overflow:hidden;width:min(440px,100%);padding:38px 38px 30px;border-radius:24px;border:1px solid #9de4d57d;border-top-color:#d0fff0a1;background:linear-gradient(145deg,#385365e8,#263b4deF 42%,#192c3deF);backdrop-filter:blur(22px);box-shadow:inset 0 2px 1px #ffffff25,inset 0 -3px 10px #0716248a,0 7px 0 #102232,0 13px 0 #091724,0 35px 85px #020b18c9,0 0 85px #39bca720}
+.login-card::before{content:"";position:absolute;inset:0;pointer-events:none;background:radial-gradient(ellipse 70% 30% at 25% 0%,#baffef23,transparent 80%),linear-gradient(115deg,transparent 15%,#ffffff0b 30%,transparent 46%)}
+.login-card>*{position:relative}
+.login-card .logo-large{width:62px;height:62px;border-radius:17px;background:linear-gradient(140deg,#3e806f,#14394b);border:1px solid #9af3df80;box-shadow:inset 0 2px 1px #e4fff47d,0 7px 18px #061a2799,0 0 26px #57e3bf45;color:#f6fffd}
+.login-card .eyebrow{color:#9ae7d4;letter-spacing:.18em}
+.login-card h1{color:#f6fbff;font-weight:850;letter-spacing:.015em;text-shadow:0 2px 12px #0b182c90}
+.login-card p{color:#b4cbd7}
+.login-card label{color:#d7e9ef;font-weight:650}
+.login-card input{height:45px;background:linear-gradient(180deg,#132637,#1c3041);border:1px solid #63849680;border-radius:11px;color:#fff;box-shadow:inset 0 2px 5px #08182775;transition:border-color .2s,box-shadow .2s}
+.login-card input::placeholder{color:#8ca9b8}
+.login-card input:focus{border-color:#8fffe2;box-shadow:inset 0 2px 5px #08182775,0 0 0 3px #4be7bc23,0 0 19px #4be7bc32}
+.login-card .primary.full{position:relative;overflow:hidden;margin-top:4px;min-height:47px;border:1px solid #9affdfad;border-radius:11px;color:#f7fffc;font-size:13px;font-weight:850;letter-spacing:.025em;background:linear-gradient(180deg,#48bda1,#1c8c7d 56%,#11645f);box-shadow:inset 0 2px 1px #eafff970,inset 0 -2px 5px #083d43a3,0 5px 14px #071825a1,0 0 22px #39d9ad2d;transition:transform .2s,box-shadow .2s,filter .2s}
+.login-card .primary.full::after{content:"";position:absolute;inset:-100% auto -100% -35%;width:30%;transform:rotate(25deg);background:linear-gradient(90deg,transparent,#ffffff65,transparent);transition:left .55s ease;pointer-events:none}
+.login-card .primary.full:hover::after{left:120%}
+.login-card .primary.full:hover{transform:translateY(-2px);filter:brightness(1.12);box-shadow:inset 0 2px 1px #eafff970,0 8px 20px #071825b5,0 0 28px #45edc35a}
+.login-card .login-note{color:#91aab9;border-top:1px solid #b2efe320;padding-top:17px}
+@media(max-width:480px){.login-card{padding:28px 23px 24px}.login-card h1{font-size:26px}}
+@media(prefers-reduced-motion:reduce){.rank-row.rank-click,.rank-row.rank-click .rank-glass-light,.login-card .primary.full,.login-card .primary.full::after{transition:none!important}.rank-row.rank-click:hover,.login-card .primary.full:hover{transform:none!important}}
