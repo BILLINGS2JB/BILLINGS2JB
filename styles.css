@@ -328,3 +328,6 @@ body{background:radial-gradient(ellipse 70% 48% at 83% 0%,#294c61 0%,transparent
 /* Bright green on 100% ranking; keep white text and glossy illumination */
 .rank-row.rank-click .rank-glass-fill{background:linear-gradient(180deg,color-mix(in srgb,var(--rank-color) 65%,white 35%) 0%,var(--rank-color) 53%,color-mix(in srgb,var(--rank-color) 88%,#0f8555 12%) 100%)!important;opacity:.94}
 .rank-row.rank-click .rank-line b{color:#fff!important;filter:none!important}
+.job-card {
+  cursor: pointer;
+}
