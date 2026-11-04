@@ -265,3 +265,6 @@ body{background:radial-gradient(ellipse 70% 48% at 83% 0%,#294c61 0%,transparent
 .legend-item.legend-unstarted .legend-label{color:#EF7777;font-weight:750}
 .rank-row.rank-click .rank-line b.rank-percent{color:#fff!important;filter:none;text-shadow:0 1px 4px #07111edb}
 .donut-chart svg text:first-of-type{font-weight:800}
+
+/* FIX khusus angka tengah donut: ukuran besar, tanpa mengubah bagian lain */
+.donut-chart svg > text {font-size:30px!important;font-weight:900!important;letter-spacing:-1px!important;dominant-baseline:middle;paint-order:stroke fill;}
