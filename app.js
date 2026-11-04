@@ -179,14 +179,14 @@ function renderNav(){
  const admin=isAdmin();
  $('nav').innerHTML=`
   <button class="nav-item" data-page="dashboard"><span class="nav-ico">◫</span>Dashboard</button>
-  <button type="button" class="nav-item nav-parent" id="navPekerjaan" aria-expanded="false"><span class="nav-ico">▤</span>Pekerjaan${admin?'<span id="pendingNavBadge" class="pending-nav-badge" hidden aria-label="Laporan menunggu verifikasi"></span>':''}<span class="nav-chevron">⌄</span></button>
+  ${admin?`<button type="button" class="nav-item nav-parent" id="navPekerjaan" aria-expanded="false"><span class="nav-ico">▤</span>Pekerjaan${admin?'<span id="pendingNavBadge" class="pending-nav-badge" hidden aria-label="Laporan menunggu verifikasi"></span>':''}<span class="nav-chevron">⌄</span></button>
   <div class="nav-submenu" id="navPekerjaanSub" hidden>
    ${admin?'<button class="nav-item nav-subitem" data-page="update">Update Pekerjaan</button><button class="nav-item nav-subitem" data-page="verify">Menunggu Verifikasi <span id="pendingSubBadge" class="pending-sub-badge" hidden></span></button>':''}
-  </div>
+  </div>`:''}
   <a class="nav-item" href="prabilling.html"><span class="nav-ico">◷</span>Pra Billing</a>
   <a class="nav-item" href="pascabilling.html"><span class="nav-ico">▣</span>Pasca Billing</a>`;
  const parent=$('navPekerjaan'), sub=$('navPekerjaanSub');
- parent.onclick=()=>{const opening=sub.hidden;sub.hidden=!opening;parent.setAttribute('aria-expanded',String(opening));parent.classList.toggle('expanded',opening)};
+ if(parent&&sub)parent.onclick=()=>{const opening=sub.hidden;sub.hidden=!opening;parent.setAttribute('aria-expanded',String(opening));parent.classList.toggle('expanded',opening)};
  document.querySelectorAll('[data-page]').forEach(b=>b.onclick=()=>showPage(b.dataset.page));
 }
 function updatePendingNav(){
@@ -326,26 +326,41 @@ function renderDetail(){
  const job=jobBy(state.job);if(!job||!currentJobs().some(j=>j.id===state.job)){showPage('dashboard');return}
  const cols1=columns(job,'target_columns').sort((a,b)=>(key(a)==='IDPEL'?-2:key(a)==='NAMA'?-1:0)-(key(b)==='IDPEL'?-2:key(b)==='NAMA'?-1:0)),cols2=columns(job,'report_columns'), fields=fieldConfig(job);
  const all=state.rows.filter(r=>r.job_id===job.id);
- const baseRows=isULP()?all.filter(r=>r.status==='OPEN'||r.status==='REJECTED'):all;
+ const baseRows=all;
+ // Muat draft lokal sebelum filter, termasuk draft di halaman pagination lain.
+ if(isULP())for(const r of baseRows){
+  if((r.status==='OPEN'||r.status==='REJECTED')&&!(r.id in state.draft)){
+   try{const saved=localStorage.getItem('billings2jb_draft_'+r.id);if(saved)state.draft[r.id]=JSON.parse(saved)}catch(e){console.warn('Draft lokal tidak terbaca:',e)}
+  }
+ }
+ const editable=r=>isULP()&&(r.status==='OPEN'||r.status==='REJECTED');
+ const hasDraft=r=>editable(r)&&Object.values({...r.report_data,...state.draft[r.id]}).some(v=>String(v??'').trim());
  const query=String(state.detailSearch||'').trim().toLowerCase();
- const rows=baseRows.filter(r=>(!query||idpelOf(r,job).toLowerCase().includes(query))&&(state.detailFilter==='ALL'||(state.detailFilter==='EMPTY'&&!Object.values({...r.report_data,...state.draft[r.id]}).some(v=>String(v??'').trim()))||(state.detailFilter==='DRAFT'&&Object.values({...r.report_data,...state.draft[r.id]}).some(v=>String(v??'').trim()))||(state.detailFilter==='REJECTED'&&r.status==='REJECTED')));
+ const rows=baseRows.filter(r=>(!query||idpelOf(r,job).toLowerCase().includes(query))&&(
+   state.detailFilter==='ALL'||
+   (state.detailFilter==='EMPTY'&&editable(r)&&!hasDraft(r))||
+   (state.detailFilter==='DRAFT'&&hasDraft(r))||
+   (state.detailFilter==='PENDING'&&r.status==='PENDING')||
+   (state.detailFilter==='APPROVED'&&r.status==='APPROVED')||
+   (state.detailFilter==='REJECTED'&&r.status==='REJECTED')
+ ));
  const s=groupStats(all);
  const pageSize=25,totalPages=Math.max(1,Math.ceil(rows.length/pageSize));
  state.detailPage=Math.min(Math.max(1,Number(state.detailPage)||1),totalPages);
  const start=(state.detailPage-1)*pageSize;
  const visibleRows=rows.slice(start,start+pageSize);
  let html=`<section class="panel billing-detail"><div class="section-head"><div><h3>${esc(job.title)}</h3><div class="panel-sub">${esc(period())} · ${s.approved}/${s.total} diterima, ${s.pending} menunggu verifikasi</div></div><div class="toolbar"><button class="btn" id="backJobs">← Kembali</button>${isAdmin()?'<button class="btn primary" id="exportOne">↓ Download Excel</button><button class="btn" id="exportZip">↓ ZIP Eviden</button><button class="btn danger" id="archiveEvidence">📦 Arsip & Kosongkan Foto</button>':''}</div></div>`;
- if(isULP())html+=`<div class="notice">Isi realisasi pada kolom hijau, lalu klik <b>Simpan & Kirim Verifikasi</b>. Setelah berhasil dikirim, baris akan hilang dari daftar pengisian ini dan masuk antrean Admin. Baris yang ditolak akan muncul lagi dengan alasan revisi.</div>`;
+ if(isULP())html+=`<div class="notice">Isi realisasi pada kolom hijau, lalu klik <b>Simpan & Kirim Verifikasi</b>. Setelah dikirim, status menjadi Menunggu Verifikasi dan baris tetap dapat dilihat (hanya baca). Baris yang ditolak akan muncul lagi dengan alasan revisi.</div>`;
  else html+=`<div class="notice">Halaman ini hanya untuk melihat detail pekerjaan. ${isUP3()?'Akun UP3 tidak dapat mengubah data.':'Admin melakukan verifikasi melalui menu Pekerjaan → Menunggu Verifikasi.'}</div>`;
- html+=`<div class="billing-detail-toolbar"><label>Cari IDPEL<input id="detailSearch" type="search" placeholder="Cari IDPEL dari semua halaman..." value="${esc(state.detailSearch)}" autocomplete="off"></label><label>Filter Status<select id="detailFilter"><option value="ALL" ${state.detailFilter==='ALL'?'selected':''}>Semua</option><option value="EMPTY" ${state.detailFilter==='EMPTY'?'selected':''}>Belum Diisi</option><option value="DRAFT" ${state.detailFilter==='DRAFT'?'selected':''}>Sudah Diisi / Draft</option><option value="REJECTED" ${state.detailFilter==='REJECTED'?'selected':''}>Ditolak</option></select></label><span class="billing-filter-count">${rows.length.toLocaleString('id-ID')} pelanggan ditemukan</span></div>`;
- if(isULP()&&rows.length)html+=`<div class="toolbar billing-detail-actions" style="margin:15px 0"><button class="btn" id="saveDraft">💾 Simpan Draft</button><button class="btn primary" id="submitAll">✓ Simpan & Kirim Semua yang Diisi</button></div>`;
+ html+=`<div class="billing-detail-toolbar"><label>Cari IDPEL<input id="detailSearch" type="search" placeholder="Cari IDPEL dari semua halaman..." value="${esc(state.detailSearch)}" autocomplete="off"></label><label>Filter Status<select id="detailFilter"><option value="ALL" ${state.detailFilter==='ALL'?'selected':''}>Semua</option><option value="EMPTY" ${state.detailFilter==='EMPTY'?'selected':''}>Belum Diisi</option><option value="DRAFT" ${state.detailFilter==='DRAFT'?'selected':''}>Draft</option><option value="PENDING" ${state.detailFilter==='PENDING'?'selected':''}>Menunggu Verifikasi</option><option value="APPROVED" ${state.detailFilter==='APPROVED'?'selected':''}>Diterima</option><option value="REJECTED" ${state.detailFilter==='REJECTED'?'selected':''}>Ditolak</option></select></label><span class="billing-filter-count">${rows.length.toLocaleString('id-ID')} pelanggan ditemukan</span></div>`;
+ if(isULP()&&rows.some(editable))html+=`<div class="toolbar billing-detail-actions" style="margin:15px 0"><button class="btn" id="saveDraft">💾 Simpan Draft</button><button class="btn primary" id="submitAll">✓ Simpan & Kirim Semua yang Diisi</button></div>`;
  html+=`<div class="table-scroll billing-detail-scroll"><table class="data-table billing-detail-table"><thead><tr>${cols1.map(c=>`<th class="target-head ${key(c)==='IDPEL'?'sticky-idpel':key(c)==='NAMA'?'sticky-nama':''}">${esc(c)}</th>`).join('')}${cols2.map(c=>`<th class="report-head">${esc(c)}</th>`).join('')}<th>Status</th>${isULP()?'<th>Aksi</th>':''}</tr></thead><tbody>`;
- if(!rows.length)html+=`<tr><td colspan="${cols1.length+cols2.length+2}"><div class="empty"><strong>${isULP()?'Tidak ada pekerjaan yang perlu diisi':'Tidak ada data target'}</strong>${isULP()?'Pekerjaan yang sudah dikirim sedang menunggu verifikasi, atau belum ada target pada periode ini.':''}</div></td></tr>`;
+ if(!rows.length)html+=`<tr><td colspan="${cols1.length+cols2.length+2}"><div class="empty"><strong>Tidak ada pelanggan sesuai filter</strong>Coba pilih status Semua atau ubah pencarian IDPEL.</div></td></tr>`;
  visibleRows.forEach((r,i)=>{
-  const draft=state.draft[r.id]||r.report_data||{};
+  const draft=editable(r)?(state.draft[r.id]||r.report_data||{}):(r.report_data||{});
   html+=`<tr>${cols1.map(c=>`<td class="${key(c)==='IDPEL'?'sticky-idpel':key(c)==='NAMA'?'sticky-nama':''}" title="${esc(r.target_data?.[c])}">${esc(r.target_data?.[c])}</td>`).join('')}`;
-  html+=fields.map(f=>isULP()?`<td>${htmlField(f,r,draft)}</td>`:`<td>${f.type==='photo'?photoHtml(photoDataVal(r.report_data?.[f.name]),photoArchived(r,f.name)):esc(r.report_data?.[f.name])}</td>`).join('');
-  html+=`<td>${badge(r.status)}${r.rejection_note?`<div class="status-note">${esc(r.rejection_note)}</div>`:''}</td>${isULP()?`<td><button class="btn primary" data-submit="${r.id}">Simpan & Kirim</button></td>`:''}</tr>`;
+  html+=fields.map(f=>editable(r)?`<td>${htmlField(f,r,draft)}</td>`:`<td>${f.type==='photo'?photoHtml(photoDataVal(r.report_data?.[f.name]),photoArchived(r,f.name)):esc(r.report_data?.[f.name])}</td>`).join('');
+  html+=`<td>${badge(r.status)}${r.rejection_note?`<div class="status-note">${esc(r.rejection_note)}</div>`:''}</td>${isULP()?`<td>${editable(r)?`<button class="btn primary" data-submit="${r.id}">Simpan & Kirim</button>`:'<span class="muted">Hanya lihat</span>'}</td>`:''}</tr>`;
  });
  html+='</tbody></table></div>';
  if(rows.length>pageSize){
