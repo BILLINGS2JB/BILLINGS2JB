@@ -6,7 +6,7 @@ const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, 
   auth: {persistSession:true, autoRefreshToken:true, detectSessionInUrl:false}
 });
 const $ = id => document.getElementById(id);
-const state = {profile:null, jobs:[], units:[], up3:[], rows:[], page:'dashboard', job:null, periodMonth:new Date().getMonth()+1, periodYear:new Date().getFullYear(), selectedUp3:null, selectedJob:null, draft:{}, importRows:[], importJob:null, archivedEvidence:[], configDraft:[], periodJobIds:[], hiddenPeriodJobIds:[], verifyJobFilter:"ALL"};
+const state = {profile:null, jobs:[], units:[], up3:[], rows:[], page:'dashboard', job:null, periodMonth:new Date().getMonth()+1, periodYear:new Date().getFullYear(), selectedUp3:null, selectedJob:null, draft:{}, importRows:[], importJob:null, archivedEvidence:[], configDraft:[], periodJobIds:[], hiddenPeriodJobIds:[], verifyJobFilter:"ALL",detailSearch:"",detailFilter:"ALL"};
 const MONTHS=['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];
 const EVIDENCE_BUCKET='billing-evidence';
 const STATUS={OPEN:'Belum Dikerjakan',PENDING:'Menunggu Verifikasi',APPROVED:'Diterima',REJECTED:'Ditolak / Revisi'};
@@ -32,7 +32,10 @@ function fieldConfig(job){
  });
 }
 function photoFields(job){return fieldConfig(job).filter(x=>x.type==='photo')}
-function evidencePath(row,field){return [row.ulp_code,row.job_id,row.period_year+'_'+String(row.period_month).padStart(2,'0'),row.id,safeFile(field.name)+'.jpg'].join('/')}
+function idpelOf(row,job){const c=columns(job,'target_columns').find(x=>key(x)==='IDPEL');return String((c&&row.target_data?.[c])||row.source_key||row.id)}
+function readableFolder(s){return String(s||'TANPA_NAMA').trim().replace(/[\\/]+/g,'_').replace(/[^\p{L}\p{N} _.-]/gu,'').replace(/\s+/g,'_').slice(0,90)||'TANPA_NAMA'}
+function evidencePath(row,field){const job=jobBy(row.job_id);return [readableFolder(row.ulp_code),row.period_year+'_'+String(row.period_month).padStart(2,'0'),readableFolder(job?.title),readableFolder(idpelOf(row,job)),readableFolder(field.name)+'.jpg'].join('/')}
+function validEvidencePath(path,row){return typeof path==='string'&&(path.startsWith(row.ulp_code+'/'+row.job_id+'/')||path.startsWith(readableFolder(row.ulp_code)+'/'+row.period_year+'_'))}
 const evidenceUrls=new Map();
 async function signedPhoto(path){
  if(evidenceUrls.has(path))return evidenceUrls.get(path);
@@ -108,7 +111,7 @@ function validateReport(row,report){
   if(f.required&&!value)throw new Error('Kolom wajib belum diisi: '+f.name);
   if(f.type==='select'&&value&&!f.options.includes(value))throw new Error('Kategori tidak valid pada '+f.name);
   if(f.type==='number'&&value&&!Number.isFinite(Number(value)))throw new Error('Angka tidak valid: '+f.name);
-  if(f.type==='photo'&&value&&!value.startsWith(row.ulp_code+'/'+row.job_id+'/'))throw new Error('Foto tidak sesuai target pada '+f.name);
+  if(f.type==='photo'&&value&&!validEvidencePath(value,row))throw new Error('Foto tidak sesuai target pada '+f.name);
  }
  if(!fields.some(f=>String(report[f.name]??'').trim()))throw new Error('Isi minimal satu realisasi sebelum kirim.');
 }
@@ -321,23 +324,26 @@ function renderPekerjaan(){
 }
 function renderDetail(){
  const job=jobBy(state.job);if(!job||!currentJobs().some(j=>j.id===state.job)){showPage('dashboard');return}
- const cols1=columns(job,'target_columns'),cols2=columns(job,'report_columns'), fields=fieldConfig(job);
+ const cols1=columns(job,'target_columns').sort((a,b)=>(key(a)==='IDPEL'?-2:key(a)==='NAMA'?-1:0)-(key(b)==='IDPEL'?-2:key(b)==='NAMA'?-1:0)),cols2=columns(job,'report_columns'), fields=fieldConfig(job);
  const all=state.rows.filter(r=>r.job_id===job.id);
- const rows=isULP()?all.filter(r=>r.status==='OPEN'||r.status==='REJECTED'):all;
+ const baseRows=isULP()?all.filter(r=>r.status==='OPEN'||r.status==='REJECTED'):all;
+ const query=String(state.detailSearch||'').trim().toLowerCase();
+ const rows=baseRows.filter(r=>(!query||idpelOf(r,job).toLowerCase().includes(query))&&(state.detailFilter==='ALL'||(state.detailFilter==='EMPTY'&&!Object.values({...r.report_data,...state.draft[r.id]}).some(v=>String(v??'').trim()))||(state.detailFilter==='DRAFT'&&Object.values({...r.report_data,...state.draft[r.id]}).some(v=>String(v??'').trim()))||(state.detailFilter==='REJECTED'&&r.status==='REJECTED')));
  const s=groupStats(all);
  const pageSize=25,totalPages=Math.max(1,Math.ceil(rows.length/pageSize));
  state.detailPage=Math.min(Math.max(1,Number(state.detailPage)||1),totalPages);
  const start=(state.detailPage-1)*pageSize;
  const visibleRows=rows.slice(start,start+pageSize);
- let html=`<section class="panel"><div class="section-head"><div><h3>${esc(job.title)}</h3><div class="panel-sub">${esc(period())} · ${s.approved}/${s.total} diterima, ${s.pending} menunggu verifikasi</div></div><div class="toolbar"><button class="btn" id="backJobs">← Kembali</button>${isAdmin()?'<button class="btn primary" id="exportOne">↓ Download Excel</button><button class="btn" id="exportZip">↓ ZIP Eviden</button><button class="btn danger" id="archiveEvidence">📦 Arsip & Kosongkan Foto</button>':''}</div></div>`;
+ let html=`<section class="panel billing-detail"><div class="section-head"><div><h3>${esc(job.title)}</h3><div class="panel-sub">${esc(period())} · ${s.approved}/${s.total} diterima, ${s.pending} menunggu verifikasi</div></div><div class="toolbar"><button class="btn" id="backJobs">← Kembali</button>${isAdmin()?'<button class="btn primary" id="exportOne">↓ Download Excel</button><button class="btn" id="exportZip">↓ ZIP Eviden</button><button class="btn danger" id="archiveEvidence">📦 Arsip & Kosongkan Foto</button>':''}</div></div>`;
  if(isULP())html+=`<div class="notice">Isi realisasi pada kolom hijau, lalu klik <b>Simpan & Kirim Verifikasi</b>. Setelah berhasil dikirim, baris akan hilang dari daftar pengisian ini dan masuk antrean Admin. Baris yang ditolak akan muncul lagi dengan alasan revisi.</div>`;
  else html+=`<div class="notice">Halaman ini hanya untuk melihat detail pekerjaan. ${isUP3()?'Akun UP3 tidak dapat mengubah data.':'Admin melakukan verifikasi melalui menu Pekerjaan → Menunggu Verifikasi.'}</div>`;
- if(isULP()&&rows.length)html+=`<div class="toolbar" style="margin:15px 0"><button class="btn primary" id="submitAll">✓ Simpan & Kirim Semua yang Diisi</button></div>`;
- html+=`<div class="table-scroll"><table class="data-table"><thead><tr><th>No</th><th>ULP</th>${cols1.map(c=>`<th class="target-head">${esc(c)}</th>`).join('')}${cols2.map(c=>`<th class="report-head">${esc(c)}</th>`).join('')}<th>Status</th>${isULP()?'<th>Aksi</th>':''}</tr></thead><tbody>`;
- if(!rows.length)html+=`<tr><td colspan="${cols1.length+cols2.length+4}"><div class="empty"><strong>${isULP()?'Tidak ada pekerjaan yang perlu diisi':'Tidak ada data target'}</strong>${isULP()?'Pekerjaan yang sudah dikirim sedang menunggu verifikasi, atau belum ada target pada periode ini.':''}</div></td></tr>`;
+ html+=`<div class="billing-detail-toolbar"><label>Cari IDPEL<input id="detailSearch" type="search" placeholder="Cari IDPEL dari semua halaman..." value="${esc(state.detailSearch)}" autocomplete="off"></label><label>Filter Status<select id="detailFilter"><option value="ALL" ${state.detailFilter==='ALL'?'selected':''}>Semua</option><option value="EMPTY" ${state.detailFilter==='EMPTY'?'selected':''}>Belum Diisi</option><option value="DRAFT" ${state.detailFilter==='DRAFT'?'selected':''}>Sudah Diisi / Draft</option><option value="REJECTED" ${state.detailFilter==='REJECTED'?'selected':''}>Ditolak</option></select></label><span class="billing-filter-count">${rows.length.toLocaleString('id-ID')} pelanggan ditemukan</span></div>`;
+ if(isULP()&&rows.length)html+=`<div class="toolbar billing-detail-actions" style="margin:15px 0"><button class="btn" id="saveDraft">💾 Simpan Draft</button><button class="btn primary" id="submitAll">✓ Simpan & Kirim Semua yang Diisi</button></div>`;
+ html+=`<div class="table-scroll billing-detail-scroll"><table class="data-table billing-detail-table"><thead><tr>${cols1.map(c=>`<th class="target-head ${key(c)==='IDPEL'?'sticky-idpel':key(c)==='NAMA'?'sticky-nama':''}">${esc(c)}</th>`).join('')}${cols2.map(c=>`<th class="report-head">${esc(c)}</th>`).join('')}<th>Status</th>${isULP()?'<th>Aksi</th>':''}</tr></thead><tbody>`;
+ if(!rows.length)html+=`<tr><td colspan="${cols1.length+cols2.length+2}"><div class="empty"><strong>${isULP()?'Tidak ada pekerjaan yang perlu diisi':'Tidak ada data target'}</strong>${isULP()?'Pekerjaan yang sudah dikirim sedang menunggu verifikasi, atau belum ada target pada periode ini.':''}</div></td></tr>`;
  visibleRows.forEach((r,i)=>{
   const draft=state.draft[r.id]||r.report_data||{};
-  html+=`<tr><td>${start+i+1}</td><td>${esc(unitLabel(r.ulp_code))}</td>${cols1.map(c=>`<td title="${esc(r.target_data?.[c])}">${esc(r.target_data?.[c])}</td>`).join('')}`;
+  html+=`<tr>${cols1.map(c=>`<td class="${key(c)==='IDPEL'?'sticky-idpel':key(c)==='NAMA'?'sticky-nama':''}" title="${esc(r.target_data?.[c])}">${esc(r.target_data?.[c])}</td>`).join('')}`;
   html+=fields.map(f=>isULP()?`<td>${htmlField(f,r,draft)}</td>`:`<td>${f.type==='photo'?photoHtml(photoDataVal(r.report_data?.[f.name]),photoArchived(r,f.name)):esc(r.report_data?.[f.name])}</td>`).join('');
   html+=`<td>${badge(r.status)}${r.rejection_note?`<div class="status-note">${esc(r.rejection_note)}</div>`:''}</td>${isULP()?`<td><button class="btn primary" data-submit="${r.id}">Simpan & Kirim</button></td>`:''}</tr>`;
  });
@@ -351,8 +357,10 @@ function renderDetail(){
  if($('detailNext'))$('detailNext').onclick=()=>goDetailPage(state.detailPage+1);
  if($('detailPageInput'))$('detailPageInput').onchange=e=>goDetailPage(e.target.value);
 
+ const searchInput=$('detailSearch');if(searchInput){searchInput.oninput=e=>{state.detailSearch=e.target.value;state.detailPage=1;const pos=e.target.selectionStart;renderDetail();const next=$('detailSearch');next?.focus();next?.setSelectionRange(pos,pos)}}
+ if($('detailFilter'))$('detailFilter').onchange=e=>{state.detailFilter=e.target.value;state.detailPage=1;renderDetail()};
  $('backJobs').onclick=()=>showPage('dashboard');
- if(isAdmin()){$('exportOne').onclick=()=>exportJob(job);$('exportZip').onclick=()=>downloadEvidenceZip(job);$('archiveEvidence').onclick=()=>archiveEvidence(job);}
+ if(isAdmin()){$('exportOne').onclick=()=>chooseExport(job);$('exportZip').onclick=()=>downloadEvidenceZip(job);$('archiveEvidence').onclick=()=>archiveEvidence(job);}
  if(isULP()){
   document.querySelectorAll('[data-row]').forEach(inp=>{inp.oninput=()=>{
     const rid=inp.dataset.row,c=inp.dataset.col;
@@ -374,6 +382,7 @@ function renderDetail(){
   });
   document.querySelectorAll('[data-submit]').forEach(btn=>btn.onclick=()=>submitReport(btn.dataset.submit,btn));
   if($('submitAll'))$('submitAll').onclick=submitAllReports;
+  if($('saveDraft'))$('saveDraft').onclick=()=>{document.querySelectorAll('[data-row]').forEach(inp=>{const id=inp.dataset.row;state.draft[id]||={};state.draft[id][inp.dataset.col]=inp.value});let n=0;for(const [id,draft] of Object.entries(state.draft)){try{localStorage.setItem('billings2jb_draft_'+id,JSON.stringify(draft));n++}catch(e){return err(new Error('Penyimpanan draft browser penuh: '+e.message))}}toast('Draft disimpan di browser ini ('+n+' pelanggan). Belum dikirim ke Admin.');};
   document.querySelectorAll('[data-row]').forEach(inp=>inp.addEventListener('paste',pasteCells));
  }
  hydratePhotos();
@@ -808,8 +817,12 @@ async function archiveEvidence(job){
  await loadArchives();showPage(state.page,{job:state.job});
  toast(`Arsip selesai: ${removed} foto dihapus & ditandai diarsipkan. ${failed.length?'Masalah: '+failed.slice(0,2).join('; '):''}`,failed.length>0);
 }
-function exportJob(job){try{
- const cols1=columns(job,'target_columns'),cols2=columns(job,'report_columns');const rs=state.rows.filter(r=>r.job_id===job.id);
+function chooseExport(job){
+ const modal=document.createElement('div');modal.className='billing-export-backdrop';modal.innerHTML=`<div class="billing-export-dialog" role="dialog" aria-modal="true" aria-label="Pilihan Download Excel"><h3>Download Excel</h3><p>Pilih data yang ingin diunduh</p><button class="btn" data-export="ALL">Total — seluruh pelanggan</button><button class="btn" data-export="UNFINISHED">Belum Dikerjakan — termasuk ditolak</button><button class="btn" data-export="APPROVED">Diterima — sudah disetujui</button><button class="btn" data-close>Batalkan</button></div>`;
+ document.body.appendChild(modal);modal.onclick=e=>{if(e.target===modal||e.target.closest('[data-close]'))modal.remove();const btn=e.target.closest('[data-export]');if(btn){modal.remove();exportJob(job,btn.dataset.export)}};
+}
+function exportJob(job,mode='ALL'){try{
+ const cols1=columns(job,'target_columns'),cols2=columns(job,'report_columns');const rs=state.rows.filter(r=>r.job_id===job.id&&(mode==='ALL'||(mode==='APPROVED'?r.status==='APPROVED':r.status==='OPEN'||r.status==='REJECTED')));
  const out=rs.map((r,i)=>{
   const base={NO:i+1,UP3:up3For(r.ulp_code),ULP:r.ulp_code,NAMA_ULP:state.units.find(u=>u.code===r.ulp_code)?.name||'',BULAN:state.periodMonth,TAHUN:state.periodYear};
   for(const c of cols1)base[c in base?'TARGET_'+c:c]=r.target_data?.[c]??'';
@@ -817,8 +830,8 @@ function exportJob(job){try{
   base.STATUS=STATUS[r.status];base.ALASAN_PENOLAKAN=r.rejection_note||'';
   return base;
  });
- if(!out.length)return toast('Belum ada target pada pekerjaan dan periode ini.',true);
- exportWorkbook(`BILLINGS2JB_${safeFile(job.title)}_${state.periodYear}_${String(state.periodMonth).padStart(2,'0')}.xlsx`,out,'Laporan');toast('Excel lengkap berhasil diunduh.');
+ if(!out.length)return toast('Tidak ada pelanggan pada kategori yang dipilih.',true);
+ exportWorkbook(`BILLINGS2JB_${mode}_${safeFile(job.title)}_${state.periodYear}_${String(state.periodMonth).padStart(2,'0')}.xlsx`,out,'Laporan');toast('Excel lengkap berhasil diunduh.');
  }catch(e){err(e)}
 }
 async function refresh(rebuild=true){try{await Promise.all([loadMaster(),fetchRows()]);if(rebuild)showPage(state.page);else showPage(state.page,{job:state.job});}catch(e){err(e)}}
