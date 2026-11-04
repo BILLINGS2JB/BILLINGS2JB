@@ -302,3 +302,19 @@ body{background:radial-gradient(ellipse 70% 48% at 83% 0%,#294c61 0%,transparent
 .sidebar nav a.nav-item{text-decoration:none;display:flex;align-items:center}
 @media(max-width:1150px){.overview-list{grid-template-columns:repeat(2,minmax(0,1fr))!important}}
 @media(max-width:720px){.overview-list{grid-template-columns:1fr!important}}
+
+/* BILLINGS2JB · 5 agreed refinements — 2026-11-04 */
+/* Compact job heading: title only */
+.job-overview-head{min-height:0!important;margin-bottom:8px!important;padding-bottom:7px!important}
+.job-overview-head h4{margin:0!important;line-height:1.35!important}
+/* Notifications: red counter only when PENDING > 0 */
+.pending-nav-badge{margin-left:auto;min-width:21px;height:21px;padding:2px 6px;display:inline-flex;align-items:center;justify-content:center;border-radius:99px;color:#fff;background:linear-gradient(180deg,#f56d77,#bd3448);font-size:11px;font-weight:850;box-shadow:inset 0 1px 0 #ffffff60,0 0 11px #f04a5d55}
+.pending-sub-badge{margin-left:auto;color:#ff8c96;font-size:11px;font-weight:800}
+.pending-nav-badge[hidden],.pending-sub-badge[hidden]{display:none!important}
+/* Matching illuminated gradient on header and sidebar brand */
+.topbar{position:relative;isolation:isolate;background:radial-gradient(ellipse 60% 170% at 12% -50%,#719fa444,transparent 78%),linear-gradient(115deg,#344e5e 0%,#283c4d 42%,#1a2b3d 100%)!important;border-bottom:1px solid #82b7b055!important;box-shadow:inset 0 1px 0 #e0fff01c,0 5px 24px #07121e5c!important}
+.brand{background:radial-gradient(ellipse at 0% 0%,#83b9ac24,transparent 78%),linear-gradient(120deg,#293f4f,#1a2b3d)!important;border-bottom:1px solid #81b3a846!important}
+.topbar::after{content:"";position:absolute;left:0;right:0;top:0;height:1px;pointer-events:none;background:linear-gradient(90deg,transparent,#b4f5e56e,transparent)}
+/* Shared login/brand artwork */
+.logo,.logo-large{overflow:hidden;display:grid;place-items:center}
+.logo img,.logo-large img{width:100%;height:100%;display:block;object-fit:contain}
