@@ -260,3 +260,8 @@ body{background:radial-gradient(ellipse 70% 48% at 83% 0%,#294c61 0%,transparent
 .login-card .login-note{color:#91aab9;border-top:1px solid #b2efe320;padding-top:17px}
 @media(max-width:480px){.login-card{padding:28px 23px 24px}.login-card h1{font-size:26px}}
 @media(prefers-reduced-motion:reduce){.rank-row.rank-click,.rank-row.rank-click .rank-glass-light,.login-card .primary.full,.login-card .primary.full::after{transition:none!important}.rank-row.rank-click:hover,.login-card .primary.full:hover{transform:none!important}}
+
+/* Finishing Aurora Glass: donut and ranking share the exact status palette. */
+.legend-item.legend-unstarted .legend-label{color:#EF7777;font-weight:750}
+.rank-row.rank-click .rank-line b.rank-percent{color:#fff!important;filter:none;text-shadow:0 1px 4px #07111edb}
+.donut-chart svg text:first-of-type{font-weight:800}
