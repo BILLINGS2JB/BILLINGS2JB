@@ -474,7 +474,7 @@ async function submitAllReports(){
   if(!packets.length)return toast('Belum ada realisasi yang diisi.',true);
   if(!confirm(`Kirim ${packets.length} baris terisi ke Admin untuk verifikasi?`))return;
   let n=0;busy(btn,true);
-  try{for(const p of packets){const {error}=await submitBillingRow(p.id,p.report);
+  try{for(const p of packets){await submitBillingRow(p.id,p.report);
    delete state.draft[p.id];try{localStorage.removeItem(draftKey(state.rows.find(r=>r.id===p.id)))}catch(_){}n++;
   }toast(`${n} baris terkirim ke Verifikasi Admin.`);await refresh(false);
   }catch(e){err(new Error(`${n} baris tersimpan sebelum proses berhenti. ${e.message}`));await refresh(false)}finally{busy(btn,false)}
@@ -485,7 +485,7 @@ async function submitReport(id,button){
  try{
   const report=collectReport(row);validateReport(row,report);
   if(!confirm('Simpan dan kirim baris ini ke Verifikasi Admin? Baris akan hilang dari daftar pengisian sampai diverifikasi.'))return;
-  busy(button,true);const {error}=await submitBillingRow(id,report);
+  busy(button,true);await submitBillingRow(id,report);
   delete state.draft[id];try{localStorage.removeItem(draftKey(row))}catch(_){}
   toast('Tersimpan! Laporan sudah masuk antrean verifikasi Admin.');await refresh(false);
  }catch(e){err(e)}finally{busy(button,false)}
