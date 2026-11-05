@@ -98,7 +98,7 @@ async function compressPhoto(file){
 function htmlField(field,row,draft){
  const val=draft[field.name]??'';
  const attr=`data-row="${esc(row.id)}" data-col="${esc(field.name)}"`;
- if(field.type==='photo')return `<div style="min-width:140px"><input type="file" accept="image/*" data-file-row="${esc(row.id)}" data-file-col="${esc(field.name)}" style="max-width:170px;font-size:11px"><div class="small" data-file-status="${esc(row.id)}:${esc(field.name)}">${val?'✓ Foto terunggah':'Pilih foto'}</div>${val?photoHtml(val):''}</div>`;
+ if(field.type==='photo')return `<div class="evidence-dropzone" tabindex="0" role="group" aria-label="Eviden ${esc(field.name)}. Klik lalu Ctrl V atau seret foto ke sini" data-evidence-drop-row="${esc(row.id)}" data-evidence-drop-col="${esc(field.name)}"><input type="file" accept="image/*" data-file-row="${esc(row.id)}" data-file-col="${esc(field.name)}" style="max-width:170px;font-size:11px"><div class="small evidence-drop-hint">Klik area ini lalu Ctrl+V, atau seret foto ke sini</div><div class="small" data-file-status="${esc(row.id)}:${esc(field.name)}">${val?'✓ Foto terunggah':'Pilih foto'}</div>${val?photoHtml(val):''}</div>`;
  if(field.type==='select')return `<select ${attr}><option value="">Pilih kategori</option>${field.options.map(o=>`<option value="${esc(o)}" ${String(o)===String(val)?'selected':''}>${esc(o)}</option>`).join('')}</select>`;
  return `<input ${attr} type="${field.type==='date'?'date':field.type==='number'?'number':'text'}" ${field.type==='number'?'step="any"':''} value="${esc(val)}" placeholder="Isi..." ${row.status==='REJECTED'?'class="revise"':''}>`;
 }
@@ -360,14 +360,44 @@ function renderDetail(){
   if(!(inp.dataset.row in state.draft)){try{const saved=localStorage.getItem(k);if(saved)state.draft[inp.dataset.row]=JSON.parse(saved)}catch(_){}}
   if(inp.dataset.row in state.draft)inp.value=state.draft[inp.dataset.row][inp.dataset.col]??inp.value;
   });
+  // Satu jalur upload untuk file picker, clipboard, dan drag & drop.
+  async function uploadDetailPhoto(file,rowId,colName){
+   const row=rows.find(r=>String(r.id)===String(rowId));
+   const field=fields.find(f=>f.name===colName);
+   if(!row||!field||!editable(row))return toast('Baris ini tidak dapat diedit.',true);
+   const zone=Array.from(document.querySelectorAll('[data-evidence-drop-row]')).find(e=>e.dataset.evidenceDropRow===String(rowId)&&e.dataset.evidenceDropCol===colName);
+   const status=zone?.querySelector('[data-file-status]');
+   const input=zone?.querySelector('[data-file-row]');
+   if(!file)return;
+   if(input)input.disabled=true;
+   if(status)status.textContent='Mengunggah foto...';
+   try{
+    await uploadEvidence(file,row,field);
+    if(status)status.textContent='✓ Foto tersimpan, siap dikirim';
+    toast('Foto berhasil diunggah. Klik Simpan & Kirim setelah data lengkap.');
+   }catch(e){if(status)status.textContent='✕ '+e.message;err(e)}
+   finally{if(input)input.disabled=false}
+  }
   document.querySelectorAll('[data-file-row]').forEach(inp=>inp.onchange=async()=>{
-   const row=rows.find(r=>r.id===inp.dataset.fileRow);
-   const field=fields.find(f=>f.name===inp.dataset.fileCol);
-   const status=Array.from(document.querySelectorAll('[data-file-status]')).find(e=>e.dataset.fileStatus===row.id+':'+field.name);
-   if(!inp.files?.[0])return;
-   inp.disabled=true;if(status)status.textContent='Mengunggah foto...';
-   try{await uploadEvidence(inp.files[0],row,field);if(status)status.textContent='✓ Foto tersimpan, siap dikirim';toast('Foto berhasil diunggah. Klik Simpan & Kirim setelah data lengkap.');}
-   catch(e){if(status)status.textContent='✕ '+e.message;err(e)}finally{inp.disabled=false}
+   await uploadDetailPhoto(inp.files?.[0],inp.dataset.fileRow,inp.dataset.fileCol);
+   inp.value='';
+  });
+  document.querySelectorAll('[data-evidence-drop-row]').forEach(zone=>{
+   zone.addEventListener('click',()=>zone.focus());
+   zone.addEventListener('paste',ev=>{
+    const file=Array.from(ev.clipboardData?.items||[]).find(item=>item.kind==='file'&&item.type.startsWith('image/'))?.getAsFile();
+    if(!file)return;
+    ev.preventDefault();ev.stopPropagation();
+    uploadDetailPhoto(file,zone.dataset.evidenceDropRow,zone.dataset.evidenceDropCol);
+   });
+   zone.addEventListener('dragover',ev=>{if(!Array.from(ev.dataTransfer?.types||[]).includes('Files'))return;ev.preventDefault();zone.classList.add('evidence-dragging')});
+   zone.addEventListener('dragleave',ev=>{if(!zone.contains(ev.relatedTarget))zone.classList.remove('evidence-dragging')});
+   zone.addEventListener('drop',ev=>{
+    ev.preventDefault();ev.stopPropagation();zone.classList.remove('evidence-dragging');
+    const file=Array.from(ev.dataTransfer?.files||[]).find(f=>f.type.startsWith('image/'));
+    if(!file)return toast('Seret file gambar, bukan dokumen.',true);
+    uploadDetailPhoto(file,zone.dataset.evidenceDropRow,zone.dataset.evidenceDropCol);
+   });
   });
   document.querySelectorAll('[data-submit]').forEach(btn=>btn.onclick=()=>submitReport(btn.dataset.submit,btn));
   if($('submitAll'))$('submitAll').onclick=submitAllReports;
