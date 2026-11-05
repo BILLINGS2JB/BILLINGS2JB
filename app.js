@@ -6,7 +6,7 @@ const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, 
   auth: {persistSession:true, autoRefreshToken:true, detectSessionInUrl:false}
 });
 const $ = id => document.getElementById(id);
-const state = {profile:null, jobs:[], units:[], up3:[], rows:[], page:'dashboard', job:null, periodMonth:new Date().getMonth()+1, periodYear:new Date().getFullYear(), selectedUp3:null, selectedJob:null, draft:{}, importRows:[], importJob:null, archivedEvidence:[], configDraft:[], periodJobIds:[], hiddenPeriodJobIds:[], verifyJobFilter:"ALL",detailSearch:"",detailFilter:"ALL"};
+const state = {profile:null, jobs:[], units:[], up3:[], rows:[], page:'dashboard', job:null, periodMonth:new Date().getMonth()+1, periodYear:new Date().getFullYear(), selectedUp3:null, selectedJob:null, draft:{}, importRows:[], importJob:null, archivedEvidence:[], configDraft:[], periodJobIds:[], hiddenPeriodJobIds:[], verifyJobFilter:"ALL",detailSearch:"",detailFilter:"ALL",detailUlp:"ALL"};
 const MONTHS=['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];
 const EVIDENCE_BUCKET='billing-evidence';
 // Category pages load a tiny route-specific file; the shared billing engine stays in app.js.
@@ -79,11 +79,11 @@ async function uploadEvidence(file,row,field){
  const path=evidencePath(row,field);
  const {error}=await sb.storage.from(EVIDENCE_BUCKET).upload(path,blob,{contentType:'image/jpeg',upsert:true,cacheControl:'60'});
  if(error)throw new Error('Upload foto gagal: '+error.message);
- const {error:registerError}=await sb.rpc('billing_register_evidence',{p_target:row.id,p_field:field.name,p_path:path});
+ const {error:registerError}=await sb.rpc(isUP3()?'billing_register_evidence_up3':'billing_register_evidence',{p_target:row.id,p_field:field.name,p_path:path});
  if(registerError)throw new Error('Foto masuk Storage tapi registrasi gagal: '+registerError.message);
  evidenceUrls.delete(path);
  state.draft[row.id] ||= {...(row.report_data||{})};state.draft[row.id][field.name]=path;
- try{localStorage.setItem('billings2jb_draft_'+row.id,JSON.stringify(state.draft[row.id]))}catch(_){}
+ try{localStorage.setItem(draftKey(row),JSON.stringify(state.draft[row.id]))}catch(_){}
 }
 async function compressPhoto(file){
  const image=await createImageBitmap(file);
@@ -122,6 +122,15 @@ function validateReport(row,report){
 function isAdmin(){return state.profile?.role==='ADMIN'}
 function isUP3(){return state.profile?.role==='UP3'}
 function isULP(){return state.profile?.role==='ULP'}
+function canInput(){return isULP()||isUP3()}
+function canEditRow(r){return canInput()&&(r.status==='OPEN'||r.status==='REJECTED')&&(isULP()?r.ulp_code===state.profile.ulp_code:up3For(r.ulp_code)===state.profile.up3_code)}
+function scopedRows(jobId){return state.rows.filter(r=>r.job_id===jobId&&(isAdmin()||isULP()&&r.ulp_code===state.profile.ulp_code||isUP3()&&up3For(r.ulp_code)===state.profile.up3_code))}
+function draftKey(r){return 'billings2jb_draft_'+(state.profile?.user_id||state.profile?.username||'user')+'_'+r.id}
+async function submitBillingRow(id,report){
+ const rpc=isUP3()?'billing_submit_up3':'billing_submit';
+ const {error}=await sb.rpc(rpc,{p_target:id,p_report:report});
+ if(error)throw new Error(error.message+(isUP3()?' — Pastikan SQL BILLINGS2JB_UP3_SUBMIT.sql sudah dijalankan.':''));
+}
 function periodFilter(query){return query.eq('period_year',state.periodYear).eq('period_month',state.periodMonth)}
 async function listAll(table,apply,qfields='*'){
  // Paginate to avoid Supabase/PostgREST default 1,000 row cap.
@@ -166,7 +175,7 @@ async function loadContext(){
  $('login').classList.add('hidden');$('app').classList.remove('hidden');
  $('sideUsername').textContent=r.data.username;
  $('sideRole').textContent={ADMIN:'Admin / GOD',UP3:'Monitoring UP3',ULP:'Pelaporan ULP'}[r.data.role]||r.data.role;
- $('sideInitial').textContent=(r.data.username||'U')[0].toUpperCase();renderNav();
+ $('sideInitial').textContent=(r.data.username||'U')[0].toUpperCase();renderNav();if(window.BillingNotifications)window.BillingNotifications.init();
  try {
   await Promise.all([loadMaster(),fetchRows()]);
   showPage(BILLING_CATEGORY?'dashboard':(new URLSearchParams(location.search).get('view')||'dashboard'));
@@ -286,14 +295,14 @@ function renderDetail(){
  const job=jobBy(state.job);if(!job||!currentJobs().some(j=>j.id===state.job)){showPage('dashboard');return}
  const cols1=columns(job,'target_columns').sort((a,b)=>(key(a)==='IDPEL'?-2:key(a)==='NAMA'?-1:0)-(key(b)==='IDPEL'?-2:key(b)==='NAMA'?-1:0)),cols2=columns(job,'report_columns'), fields=fieldConfig(job);
  const all=state.rows.filter(r=>r.job_id===job.id);
- const baseRows=all;
+ const baseRows=scopedRows(job.id).filter(r=>!isUP3()||state.detailUlp==='ALL'||r.ulp_code===state.detailUlp);
  // Muat draft lokal sebelum filter, termasuk draft di halaman pagination lain.
- if(isULP())for(const r of baseRows){
+ if(canInput())for(const r of baseRows){
   if((r.status==='OPEN'||r.status==='REJECTED')&&!(r.id in state.draft)){
-   try{const saved=localStorage.getItem('billings2jb_draft_'+r.id);if(saved)state.draft[r.id]=JSON.parse(saved)}catch(e){console.warn('Draft lokal tidak terbaca:',e)}
+   try{const saved=localStorage.getItem(draftKey(r))||(isULP()?localStorage.getItem('billings2jb_draft_'+r.id):null);if(saved)state.draft[r.id]=JSON.parse(saved)}catch(e){console.warn('Draft lokal tidak terbaca:',e)}
   }
  }
- const editable=r=>isULP()&&(r.status==='OPEN'||r.status==='REJECTED');
+ const editable=r=>canEditRow(r);
  const hasDraft=r=>editable(r)&&Object.values({...r.report_data,...state.draft[r.id]}).some(v=>String(v??'').trim());
  const query=String(state.detailSearch||'').trim().toLowerCase();
  const rows=baseRows.filter(r=>(!query||idpelOf(r,job).toLowerCase().includes(query))&&(
@@ -310,17 +319,19 @@ function renderDetail(){
  const start=(state.detailPage-1)*pageSize;
  const visibleRows=rows.slice(start,start+pageSize);
  let html=`<section class="panel billing-detail"><div class="section-head"><div><h3>${esc(job.title)}</h3><div class="panel-sub">${esc(period())} · ${s.approved}/${s.total} diterima, ${s.pending} menunggu verifikasi</div></div><div class="toolbar"><button class="btn" id="backJobs">← Kembali</button>${isAdmin()?'<button class="btn primary" id="exportOne">↓ Download Excel</button><button class="btn" id="exportZip">↓ ZIP Eviden</button><button class="btn danger" id="archiveEvidence">📦 Arsip & Kosongkan Foto</button>':''}</div></div>`;
- if(isULP())html+=`<div class="notice">Isi realisasi pada kolom hijau, lalu klik <b>Simpan & Kirim Verifikasi</b>. Setelah dikirim, status menjadi Menunggu Verifikasi dan baris tetap dapat dilihat (hanya baca). Baris yang ditolak akan muncul lagi dengan alasan revisi.</div>`;
- else html+=`<div class="notice">Halaman ini hanya untuk melihat detail pekerjaan. ${isUP3()?'Akun UP3 tidak dapat mengubah data.':'Admin melakukan verifikasi melalui menu Pekerjaan → Menunggu Verifikasi.'}</div>`;
+ if(canInput())html+=`<div class="notice">Isi realisasi pada kolom hijau, lalu klik <b>Simpan & Kirim Verifikasi</b>. Setelah dikirim, status menjadi Menunggu Verifikasi dan baris tetap dapat dilihat (hanya baca). Baris yang ditolak akan muncul lagi dengan alasan revisi.</div>`;
+ else html+=`<div class="notice">Halaman ini hanya untuk melihat detail pekerjaan. ${isUP3()?'Akun UP3 dapat membantu ULP wilayahnya.':'Admin melakukan verifikasi melalui menu Pekerjaan → Menunggu Verifikasi.'}</div>`;
+ if(isUP3())html+=`<div class="billing-detail-toolbar"><label>Pilih ULP<select id="detailUlp"><option value="ALL">Semua ULP wilayah saya</option>${state.units.filter(u=>u.up3_code===state.profile.up3_code).map(u=>`<option value="${esc(u.code)}" ${state.detailUlp===u.code?'selected':''}>${esc(u.code)} · ${esc(u.name)}</option>`).join('')}</select></label></div>`;
+ if(canInput())html+=`<div class="billing-detail-toolbar"><button type="button" class="btn" id="downloadRealisasiTemplate">↓ Template Excel Realisasi</button><label class="btn" style="cursor:pointer">⇧ Upload Excel Realisasi<input id="uploadRealisasiFile" type="file" accept=".xlsx,.xls" hidden></label></div><div id="realisasiImportPreview"></div>`;
  html+=`<div class="billing-detail-toolbar"><label>Cari IDPEL<input id="detailSearch" type="search" placeholder="Cari IDPEL dari semua halaman..." value="${esc(state.detailSearch)}" autocomplete="off"></label><label>Filter Status<select id="detailFilter"><option value="ALL" ${state.detailFilter==='ALL'?'selected':''}>Semua</option><option value="EMPTY" ${state.detailFilter==='EMPTY'?'selected':''}>Belum Diisi</option><option value="DRAFT" ${state.detailFilter==='DRAFT'?'selected':''}>Draft</option><option value="PENDING" ${state.detailFilter==='PENDING'?'selected':''}>Menunggu Verifikasi</option><option value="APPROVED" ${state.detailFilter==='APPROVED'?'selected':''}>Diterima</option><option value="REJECTED" ${state.detailFilter==='REJECTED'?'selected':''}>Ditolak</option></select></label><span class="billing-filter-count">${rows.length.toLocaleString('id-ID')} pelanggan ditemukan</span></div>`;
- if(isULP()&&rows.some(editable))html+=`<div class="toolbar billing-detail-actions" style="margin:15px 0"><button class="btn" id="saveDraft">💾 Simpan Draft</button><button class="btn primary" id="submitAll">✓ Simpan & Kirim Semua yang Diisi</button></div>`;
- html+=`<div class="table-scroll billing-detail-scroll"><table class="data-table billing-detail-table"><thead><tr>${cols1.map(c=>`<th class="target-head ${key(c)==='IDPEL'?'sticky-idpel':key(c)==='NAMA'?'sticky-nama':''}">${esc(c)}</th>`).join('')}${cols2.map(c=>`<th class="report-head">${esc(c)}</th>`).join('')}<th>Status</th>${isULP()?'<th>Aksi</th>':''}</tr></thead><tbody>`;
+ if(canInput()&&rows.some(editable))html+=`<div class="toolbar billing-detail-actions" style="margin:15px 0"><button class="btn" id="saveDraft">💾 Simpan Draft</button><button class="btn primary" id="submitAll">✓ Simpan & Kirim Semua yang Diisi</button></div>`;
+ html+=`<div class="table-scroll billing-detail-scroll"><table class="data-table billing-detail-table"><thead><tr>${cols1.map(c=>`<th class="target-head ${key(c)==='IDPEL'?'sticky-idpel':key(c)==='NAMA'?'sticky-nama':''}">${esc(c)}</th>`).join('')}${cols2.map(c=>`<th class="report-head">${esc(c)}</th>`).join('')}<th>Status</th>${canInput()?'<th>Aksi</th>':''}</tr></thead><tbody>`;
  if(!rows.length)html+=`<tr><td colspan="${cols1.length+cols2.length+2}"><div class="empty"><strong>Tidak ada pelanggan sesuai filter</strong>Coba pilih status Semua atau ubah pencarian IDPEL.</div></td></tr>`;
  visibleRows.forEach((r,i)=>{
   const draft=editable(r)?(state.draft[r.id]||r.report_data||{}):(r.report_data||{});
   html+=`<tr>${cols1.map(c=>`<td class="${key(c)==='IDPEL'?'sticky-idpel':key(c)==='NAMA'?'sticky-nama':''}" title="${esc(r.target_data?.[c])}">${esc(r.target_data?.[c])}</td>`).join('')}`;
   html+=fields.map(f=>editable(r)?`<td>${htmlField(f,r,draft)}</td>`:`<td>${f.type==='photo'?photoHtml(photoDataVal(r.report_data?.[f.name]),photoArchived(r,f.name)):esc(r.report_data?.[f.name])}</td>`).join('');
-  html+=`<td>${badge(r.status)}${r.rejection_note?`<div class="status-note">${esc(r.rejection_note)}</div>`:''}</td>${isULP()?`<td>${editable(r)?`<button class="btn primary" data-submit="${r.id}">Simpan & Kirim</button>`:'<span class="muted">Hanya lihat</span>'}</td>`:''}</tr>`;
+  html+=`<td>${badge(r.status)}${r.rejection_note?`<div class="status-note">${esc(r.rejection_note)}</div>`:''}</td>${canInput()?`<td>${editable(r)?`<button class="btn primary" data-submit="${r.id}">Simpan & Kirim</button>`:'<span class="muted">Hanya lihat</span>'}</td>`:''}</tr>`;
  });
  html+='</tbody></table></div>';
  if(rows.length>pageSize){
@@ -336,13 +347,16 @@ function renderDetail(){
  if($('detailFilter'))$('detailFilter').onchange=e=>{state.detailFilter=e.target.value;state.detailPage=1;renderDetail()};
  $('backJobs').onclick=()=>showPage('dashboard');
  if(isAdmin()){$('exportOne').onclick=()=>chooseExport(job);$('exportZip').onclick=()=>downloadEvidenceZip(job);$('archiveEvidence').onclick=()=>archiveEvidence(job);}
- if(isULP()){
+ if($('detailUlp'))$('detailUlp').onchange=e=>{state.detailUlp=e.target.value;state.detailPage=1;renderDetail()};
+ if($('downloadRealisasiTemplate'))$('downloadRealisasiTemplate').onclick=()=>downloadRealisasiTemplate(job);
+ if($('uploadRealisasiFile'))$('uploadRealisasiFile').onchange=e=>previewRealisasiImport(job,e.target.files?.[0]);
+ if(canInput()){
   document.querySelectorAll('[data-row]').forEach(inp=>{inp.oninput=()=>{
     const rid=inp.dataset.row,c=inp.dataset.col;
     state.draft[rid] ||= {...(rows.find(r=>r.id===rid)?.report_data||{})};state.draft[rid][c]=inp.value;
-    try{localStorage.setItem('billings2jb_draft_'+rid,JSON.stringify(state.draft[rid]));}catch(_){}
+    try{localStorage.setItem(draftKey(rows.find(r=>r.id===rid)),JSON.stringify(state.draft[rid]));}catch(_){}
   };
-  const k='billings2jb_draft_'+inp.dataset.row;
+  const k=draftKey(rows.find(r=>r.id===inp.dataset.row));
   if(!(inp.dataset.row in state.draft)){try{const saved=localStorage.getItem(k);if(saved)state.draft[inp.dataset.row]=JSON.parse(saved)}catch(_){}}
   if(inp.dataset.row in state.draft)inp.value=state.draft[inp.dataset.row][inp.dataset.col]??inp.value;
   });
@@ -357,10 +371,55 @@ function renderDetail(){
   });
   document.querySelectorAll('[data-submit]').forEach(btn=>btn.onclick=()=>submitReport(btn.dataset.submit,btn));
   if($('submitAll'))$('submitAll').onclick=submitAllReports;
-  if($('saveDraft'))$('saveDraft').onclick=()=>{document.querySelectorAll('[data-row]').forEach(inp=>{const id=inp.dataset.row;state.draft[id]||={};state.draft[id][inp.dataset.col]=inp.value});let n=0;for(const [id,draft] of Object.entries(state.draft)){try{localStorage.setItem('billings2jb_draft_'+id,JSON.stringify(draft));n++}catch(e){return err(new Error('Penyimpanan draft browser penuh: '+e.message))}}toast('Draft disimpan di browser ini ('+n+' pelanggan). Belum dikirim ke Admin.');};
+  if($('saveDraft'))$('saveDraft').onclick=()=>{document.querySelectorAll('[data-row]').forEach(inp=>{const id=inp.dataset.row;state.draft[id]||={};state.draft[id][inp.dataset.col]=inp.value});let n=0;for(const [id,draft] of Object.entries(state.draft)){try{localStorage.setItem(draftKey(state.rows.find(r=>r.id===id)),JSON.stringify(draft));n++}catch(e){return err(new Error('Penyimpanan draft browser penuh: '+e.message))}}toast('Draft disimpan di browser ini ('+n+' pelanggan). Belum dikirim ke Admin.');};
   document.querySelectorAll('[data-row]').forEach(inp=>inp.addEventListener('paste',pasteCells));
  }
  hydratePhotos();
+}
+// Excel realisasi: hanya field non-foto; preview wajib, disimpan sebagai draft lokal.
+function downloadRealisasiTemplate(job){
+ try{
+  const fields=fieldConfig(job).filter(f=>f.type!=='photo');
+  const rs=scopedRows(job.id).filter(r=>r.status==='OPEN'||r.status==='REJECTED');
+  const data=rs.map(r=>({UNITUP:r.ulp_code,IDPEL:idpelOf(r,job),...Object.fromEntries(fields.map(f=>[f.name,(state.draft[r.id]||r.report_data||{})[f.name]??'']))}));
+  if(!data.length)return toast('Tidak ada pelanggan yang bisa diisi.',true);
+  exportWorkbook(`TEMPLATE_REALISASI_${safeFile(job.title)}_${state.periodYear}_${String(state.periodMonth).padStart(2,'0')}.xlsx`,data,'REALISASI');
+  toast('Template realisasi berhasil diunduh. Jangan ubah UNITUP dan IDPEL.');
+ }catch(e){err(e)}
+}
+async function previewRealisasiImport(job,file){
+ const panel=$('realisasiImportPreview');if(!file||!panel)return;
+ try{
+  const XLSX=requireXLSX();const book=XLSX.read(await file.arrayBuffer(),{type:'array',cellDates:false});
+  const sheet=book.Sheets['REALISASI']||book.Sheets[book.SheetNames[0]];
+  const data=XLSX.utils.sheet_to_json(sheet,{defval:'',raw:false});
+  if(!data.length)throw new Error('Sheet REALISASI kosong.');
+  const fields=fieldConfig(job).filter(f=>f.type!=='photo');
+  const map=new Map(scopedRows(job.id).map(r=>[r.ulp_code+'|'+idpelOf(r,job),r]));
+  const seen=new Set(),valid=[],errors=[];
+  data.forEach((line,i)=>{
+   const ulp=String(line.UNITUP??'').trim(),idpel=String(line.IDPEL??'').trim(),k=ulp+'|'+idpel;
+   const r=map.get(k);
+   if(!r){errors.push(`Baris ${i+2}: UNITUP/IDPEL tidak ditemukan dalam target atau bukan wilayah akun.`);return}
+   if(seen.has(k)){errors.push(`Baris ${i+2}: UNITUP/IDPEL duplikat.`);return}seen.add(k);
+   if(!canEditRow(r)){errors.push(`Baris ${i+2}: pelanggan sudah dikirim/diterima.`);return}
+   const report={};let has=false;
+   for(const f of fields){const value=String(line[f.name]??'').trim();if(!value)continue;
+    if(f.type==='select'&&!f.options.includes(value)){errors.push(`Baris ${i+2}: nilai ${f.name} tidak ada dalam dropdown.`);return}
+    if(f.type==='number'&&!Number.isFinite(Number(value))){errors.push(`Baris ${i+2}: ${f.name} harus angka.`);return}
+    if(f.type==='date'&&!/^\d{4}-\d{2}-\d{2}$/.test(value)){errors.push(`Baris ${i+2}: ${f.name} harus YYYY-MM-DD.`);return}
+    report[f.name]=value;has=true;
+   }
+   if(has)valid.push({id:r.id,report});
+  });
+  panel.innerHTML=`<div class="notice" style="margin:12px 0"><b>Preview Upload Realisasi</b><p>${data.length} baris dibaca · ${valid.length} siap jadi draft · ${errors.length} bermasalah.</p>${errors.length?`<div style="max-height:110px;overflow:auto;color:#b91c1c">${errors.slice(0,30).map(esc).join('<br>')}${errors.length>30?'<br>...':''}</div>`:''}<div class="toolbar" style="margin-top:12px"><button type="button" class="btn primary" id="confirmRealisasiImport" ${errors.length||!valid.length?'disabled':''}>Simpan ${valid.length} Draft</button><button type="button" class="btn" id="cancelRealisasiImport">Batal</button></div><small>Upload tidak mengirim verifikasi. Foto eviden tetap diunggah di web. Draft disimpan hanya pada browser dan akun ini.</small></div>`;
+  $('cancelRealisasiImport').onclick=()=>{panel.innerHTML='';$('uploadRealisasiFile').value=''};
+  $('confirmRealisasiImport').onclick=()=>{
+   try{for(const v of valid){const r=state.rows.find(x=>x.id===v.id);state.draft[v.id]={...(r.report_data||{}),...(state.draft[v.id]||{}),...v.report};localStorage.setItem(draftKey(r),JSON.stringify(state.draft[v.id]));}
+    toast(`${valid.length} pelanggan tersimpan sebagai draft. Lengkapi foto, lalu kirim verifikasi.`);renderDetail();
+   }catch(e){err(new Error('Draft browser gagal disimpan: '+e.message))}
+  };
+ }catch(e){panel.innerHTML='';err(e)}
 }
 function pasteCells(ev){
  const text=ev.clipboardData?.getData('text/plain')||'';
@@ -385,8 +444,8 @@ async function submitAllReports(){
   if(!packets.length)return toast('Belum ada realisasi yang diisi.',true);
   if(!confirm(`Kirim ${packets.length} baris terisi ke Admin untuk verifikasi?`))return;
   let n=0;busy(btn,true);
-  try{for(const p of packets){const {error}=await sb.rpc('billing_submit',{p_target:p.id,p_report:p.report});if(error)throw new Error(`Baris ${n+1}: ${error.message}`);
-   delete state.draft[p.id];try{localStorage.removeItem('billings2jb_draft_'+p.id)}catch(_){}n++;
+  try{for(const p of packets){const {error}=await submitBillingRow(p.id,p.report);
+   delete state.draft[p.id];try{localStorage.removeItem(draftKey(state.rows.find(r=>r.id===p.id)))}catch(_){}n++;
   }toast(`${n} baris terkirim ke Verifikasi Admin.`);await refresh(false);
   }catch(e){err(new Error(`${n} baris tersimpan sebelum proses berhenti. ${e.message}`));await refresh(false)}finally{busy(btn,false)}
  }catch(e){err(e)}
@@ -396,8 +455,8 @@ async function submitReport(id,button){
  try{
   const report=collectReport(row);validateReport(row,report);
   if(!confirm('Simpan dan kirim baris ini ke Verifikasi Admin? Baris akan hilang dari daftar pengisian sampai diverifikasi.'))return;
-  busy(button,true);const {error}=await sb.rpc('billing_submit',{p_target:id,p_report:report});if(error)throw error;
-  delete state.draft[id];try{localStorage.removeItem('billings2jb_draft_'+id)}catch(_){}
+  busy(button,true);const {error}=await submitBillingRow(id,report);
+  delete state.draft[id];try{localStorage.removeItem(draftKey(row))}catch(_){}
   toast('Tersimpan! Laporan sudah masuk antrean verifikasi Admin.');await refresh(false);
  }catch(e){err(e)}finally{busy(button,false)}
 }
@@ -800,7 +859,7 @@ function chooseExport(job){
  document.body.appendChild(modal);modal.onclick=e=>{if(e.target===modal||e.target.closest('[data-close]'))modal.remove();const btn=e.target.closest('[data-export]');if(btn){modal.remove();exportJob(job,btn.dataset.export)}};
 }
 function exportJob(job,mode='ALL'){try{
- const cols1=columns(job,'target_columns'),cols2=columns(job,'report_columns');const rs=state.rows.filter(r=>r.job_id===job.id&&(mode==='ALL'||(mode==='APPROVED'?r.status==='APPROVED':r.status==='OPEN'||r.status==='REJECTED')));
+ const cols1=columns(job,'target_columns'),cols2=columns(job,'report_columns');const rs=scopedRows(job.id).filter(r=>mode==='ALL'||(mode==='APPROVED'?r.status==='APPROVED':mode==='PENDING'?r.status==='PENDING':r.status==='OPEN'||r.status==='REJECTED'));
  const out=rs.map((r,i)=>{
   const base={NO:i+1,UP3:up3For(r.ulp_code),ULP:r.ulp_code,NAMA_ULP:state.units.find(u=>u.code===r.ulp_code)?.name||'',BULAN:state.periodMonth,TAHUN:state.periodYear};
   for(const c of cols1)base[c in base?'TARGET_'+c:c]=r.target_data?.[c]??'';
@@ -853,7 +912,7 @@ async function init(){setupPeriod();$('loginForm').onsubmit=login;$('logout').on
   }else{$('login').classList.remove('hidden')}
  }catch(e){console.error('Pemeriksaan sesi gagal:',e);loginError('Gagal memeriksa sesi: '+e.message);$('login').classList.remove('hidden')}
  // Pembaruan berkala hanya pada halaman monitoring, agar draf input ULP tidak terganggu.
- setInterval(async()=>{if(!state.profile||!['dashboard','verify','pekerjaan'].includes(state.page))return;try{await Promise.all([loadMaster(),fetchRows()]);showPage(state.page)}catch(e){console.warn('Auto-refresh:',e.message)}},30000);
+ setInterval(async()=>{if(!state.profile||!['dashboard','verify','pekerjaan'].includes(state.page))return;try{await Promise.all([loadMaster(),fetchRows()]);if(!document.querySelector('#drillPanel:not([hidden])'))showPage(state.page);else updatePendingNav()}catch(e){console.warn('Auto-refresh:',e.message)}},30000);
 }
 init().catch(e=>{console.error('Inisialisasi BILLINGS2JB:',e);$('login').classList.remove('hidden');err(e)});
 
