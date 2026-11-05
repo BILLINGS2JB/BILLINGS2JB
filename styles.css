@@ -358,3 +358,12 @@ body{background:radial-gradient(ellipse 70% 48% at 83% 0%,#294c61 0%,transparent
 /* Fitur ekspor legend: tidak mengubah tampilan Aurora Glass. */
 .legend-item[data-legend-export]{cursor:pointer}
 .legend-item[data-legend-export]:focus-visible{outline:2px solid #70dcc1;outline-offset:2px;border-radius:5px}
+
+/* Hover statistik kartu pekerjaan */
+.legend-item[data-legend-export]{cursor:pointer;transition:background .15s ease,box-shadow .15s ease}
+.legend-item[data-legend-export]:hover,.legend-item[data-legend-export]:focus-visible{background:#3b5264;box-shadow:0 0 0 3px #3b526455}
+.legend-item[data-legend-export] .legend-label,.legend-item[data-legend-export] strong{cursor:pointer}
+/* Copas dan drag-drop foto eviden */
+.evidence-dropzone{min-width:150px;padding:6px;border:1px dashed #93b9aa;border-radius:8px;outline-offset:2px;transition:background .15s,border-color .15s}
+.evidence-dropzone:focus,.evidence-dropzone:focus-within,.evidence-dropzone.evidence-dragging{outline:2px solid #38a889;background:#d7f5e4;border-color:#168b70}
+.evidence-drop-hint{font-size:10px;color:#477d69;margin:4px 0}
