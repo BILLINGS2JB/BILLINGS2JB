@@ -28,7 +28,7 @@ function renderDashboard(){
   return `<article class="job-overview job-openable" data-openjob-card="${esc(job.id)}" tabindex="0" role="link" aria-label="Buka daftar pelanggan pekerjaan ${esc(job.title)}">
    <div class="job-overview-head"><div><h4>${esc(job.title)}</h4></div></div>
    <div class="job-visuals"><div class="job-donut-section"><div class="donut-and-status"><div class="donut-chart"><svg viewBox="0 0 120 120" role="img" aria-label="Capaian ${s.pct}%"><defs><linearGradient id="premiumDonut${i}" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="${s.pct>=100?'#A5FF9C':donutColor}"/><stop offset="100%" stop-color="${s.pct>=100?'#25E98A':donutColor}"/></linearGradient></defs><circle class="donut-3d-depth" cx="60" cy="65" r="43" fill="none" stroke="#102331" stroke-width="15"/><circle class="donut-3d-rim" cx="60" cy="62" r="43" fill="none" stroke="#315767" stroke-width="13"/><circle cx="60" cy="60" r="43" fill="none" stroke="#142a39" stroke-width="12"/>${arcs.replace(`stroke="${donutColor}"`, `stroke="url(#premiumDonut${i})"`).replace('stroke-width="14"', 'stroke-width="12" stroke-linecap="round"')}<text x="60" y="60" text-anchor="middle" dominant-baseline="central" fill="${donutColor}" font-size="29" font-weight="850">${s.pct}</text></svg></div>
-   <div class="donut-legend">${parts.map(part=>`<div class="legend-item ${part.key==='unstarted'?'legend-hover legend-unstarted':''}" ${part.key==='unstarted'?'tabindex="0" aria-label="Lihat ULP dengan realisasi terendah"':''}><span class="legend-dot" style="background:${part.color}"></span><span class="legend-label">${part.name}</span><strong>${fmt(part.count)}</strong>${part.key==='unstarted'?`<div class="low-tooltip"><div class="low-tooltip-title">ULP Realisasi Terendah</div><small>Khusus ${esc(job.title)}</small>${tooltip}</div>`:''}</div>`).join('')}</div></div></div>
+   <div class="donut-legend">${parts.map(part=>`<div class="legend-item ${part.key==='unstarted'?'legend-hover legend-unstarted':''}" role="button" tabindex="0" data-legend-export="${part.key}" data-legend-job="${esc(job.id)}" title="Klik untuk download Excel ${part.name}" ${part.key==='unstarted'?'aria-label="Hover lihat ranking ULP; klik download Excel belum"':''}><span class="legend-dot" style="background:${part.color}"></span><span class="legend-label">${part.name}</span><strong>${fmt(part.count)}</strong>${part.key==='unstarted'?`<div class="low-tooltip"><div class="low-tooltip-title">ULP Realisasi Terendah</div><small>Khusus ${esc(job.title)}</small>${tooltip}</div>`:''}</div>`).join('')}</div></div></div>
    <div class="job-ranking"><div class="ranking-title">${isAdmin()?'Ranking UP3':'Ranking ULP'} <small>Berdasarkan capaian</small></div><div class="ranking-bars">${ranking.length?ranking.map(u=>`<button type="button" class="rank-row rank-click" style="--rank-color:${rankColor(u.stats.pct)}" data-rank-unit="${esc(u.code)}" data-rank-job="${esc(job.id)}" title="Klik untuk rincian ${esc(u.name||u.code)}"><span class="rank-glass-fill" style="--rank-progress:${Math.max(0,Math.min(100,u.stats.pct))}%;--rank-color:${rankColor(u.stats.pct)}" aria-hidden="true"></span><span class="rank-glass-light" aria-hidden="true"></span><span class="rank-line"><span title="${esc(u.name)}">${esc(u.name||u.code)}</span><b class="rank-percent">${u.stats.pct}%</b></span></button>`).join(''):'<div class="ranking-empty">Belum ada target pada periode ini.</div>'}</div></div></div>
   </article>`;
  }).join(''):'<div class="empty">Belum ada pekerjaan aktif pada sistem.</div>';
@@ -37,6 +37,14 @@ function renderDashboard(){
  <section class="panel drill-panel" id="drillPanel" hidden><div id="drillDown"></div></section>`);
  $('refreshDashboard').onclick=refresh;
  document.querySelectorAll('[data-rank-unit]').forEach(e=>e.onclick=()=>renderDrill(e.dataset.rankUnit,e.dataset.rankJob));
+ document.querySelectorAll('[data-legend-export]').forEach(el=>{
+  const download=()=>{const job=jobBy(el.dataset.legendJob);if(!job)return;
+   const mode={target:'ALL',approved:'APPROVED',pending:'PENDING',unstarted:'UNFINISHED'}[el.dataset.legendExport];
+   exportJob(job,mode);
+  };
+  el.onclick=e=>{e.stopPropagation();download()};
+  el.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();e.stopPropagation();download()}};
+ });
  // Kartu utama membuka daftar pelanggan; tombol ranking tetap membuka drilldown unit.
  document.querySelectorAll('[data-openjob-card]').forEach(card=>{
   const open=()=>showPage('detail',{job:card.dataset.openjobCard});
