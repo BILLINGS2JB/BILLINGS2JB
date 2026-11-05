@@ -354,3 +354,7 @@ body{background:radial-gradient(ellipse 70% 48% at 83% 0%,#294c61 0%,transparent
 .billing-export-backdrop{position:fixed;inset:0;background:#071625b8;z-index:2000;display:grid;place-items:center;padding:20px}
 .billing-export-dialog{background:#f9fcfe;color:#23394b;border-radius:18px;padding:25px;max-width:400px;width:100%;box-shadow:0 24px 80px #07121d88;display:grid;gap:10px}
 .billing-export-dialog h3{margin:0}.billing-export-dialog p{margin:0 0 10px;color:#667a8b}.billing-export-dialog .btn{text-align:left;padding:12px}
+
+/* Fitur ekspor legend: tidak mengubah tampilan Aurora Glass. */
+.legend-item[data-legend-export]{cursor:pointer}
+.legend-item[data-legend-export]:focus-visible{outline:2px solid #70dcc1;outline-offset:2px;border-radius:5px}
